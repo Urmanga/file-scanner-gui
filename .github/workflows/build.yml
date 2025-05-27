@@ -85,7 +85,7 @@ jobs:
       run: |
         cd release
         if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          powershell Compress-Archive -Path "File Scanner GUI.exe" -DestinationPath "../${{ matrix.artifact_name }}.zip"
+          powershell "Compress-Archive -Path 'File Scanner GUI.exe' -DestinationPath '../${{ matrix.artifact_name }}.zip'"
         elif [ "${{ matrix.os }}" = "macos-latest" ]; then
           zip -r "../${{ matrix.artifact_name }}.zip" "File Scanner GUI.app"
         else
