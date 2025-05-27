@@ -8,10 +8,12 @@ from datetime import datetime
 import threading
 import webbrowser
 
+print("🚀 ФАЙЛ-СКАНЕР v1.0 ЗАГРУЖЕН!", datetime.now())
+
 class FileScannerGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Сканер файлов v2.1")
+        self.root.title("Файл-Сканер v1.0")
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
         
@@ -53,21 +55,75 @@ class FileScannerGUI:
     def apply_theme(self):
         """Применить текущую тему"""
         if self.dark_theme:
-            # Темная тема
-            self.root.configure(bg='#2b2b2b')
+            # Темная тема - полное погружение в темноту
+            self.root.configure(bg='#1e1e1e')
             self.style.theme_use('clam')
-            self.style.configure('TLabel', background='#2b2b2b', foreground='white')
-            self.style.configure('TFrame', background='#2b2b2b')
-            self.style.configure('TLabelFrame', background='#2b2b2b', foreground='white')
-            self.style.configure('TButton', background='#404040', foreground='white')
-            self.style.configure('TEntry', background='#404040', foreground='white')
-            self.style.configure('TCheckbutton', background='#2b2b2b', foreground='white')
-            self.style.configure('Treeview', background='#404040', foreground='white', fieldbackground='#404040')
-            self.style.configure('Treeview.Heading', background='#505050', foreground='white')
+            
+            # Основные элементы
+            self.style.configure('TLabel', background='#1e1e1e', foreground='#ffffff')
+            self.style.configure('TFrame', background='#1e1e1e')
+            self.style.configure('TLabelFrame', background='#1e1e1e', foreground='#ffffff', 
+                               borderwidth=1, relief='solid')
+            self.style.configure('TLabelFrame.Label', background='#1e1e1e', foreground='#ffffff')
+            
+            # Кнопки
+            self.style.configure('TButton', 
+                               background='#404040', 
+                               foreground='#ffffff',
+                               borderwidth=1,
+                               focuscolor='#505050')
+            self.style.map('TButton',
+                          background=[('active', '#505050'), ('pressed', '#606060')])
+            
+            # Поля ввода
+            self.style.configure('TEntry', 
+                               background='#2d2d2d', 
+                               foreground='#ffffff',
+                               insertcolor='#ffffff',
+                               borderwidth=1,
+                               fieldbackground='#2d2d2d')
+            
+            # Чекбоксы
+            self.style.configure('TCheckbutton', 
+                               background='#1e1e1e', 
+                               foreground='#ffffff',
+                               focuscolor='none')
+            
+            # Таблица
+            self.style.configure('Treeview', 
+                               background='#2d2d2d', 
+                               foreground='#ffffff', 
+                               fieldbackground='#2d2d2d',
+                               borderwidth=1)
+            self.style.configure('Treeview.Heading', 
+                               background='#404040', 
+                               foreground='#ffffff',
+                               borderwidth=1)
+            self.style.map('Treeview',
+                          background=[('selected', '#0078d4')])
+            
+            # Прогресс-бар
+            self.style.configure('TProgressbar',
+                               background='#0078d4',
+                               troughcolor='#404040',
+                               borderwidth=1)
+            
+            # Скроллбары
+            self.style.configure('Vertical.TScrollbar',
+                               background='#404040',
+                               troughcolor='#2d2d2d',
+                               borderwidth=1)
+            self.style.configure('Horizontal.TScrollbar',
+                               background='#404040',
+                               troughcolor='#2d2d2d',
+                               borderwidth=1)
+            
         else:
             # Светлая тема
             self.root.configure(bg='SystemButtonFace')
             self.style.theme_use('clam')
+            
+            # Сброс всех настроек на стандартные
             self.style.configure('TLabel', background='SystemButtonFace', foreground='black')
             self.style.configure('TFrame', background='SystemButtonFace')
             self.style.configure('TLabelFrame', background='SystemButtonFace', foreground='black')
@@ -76,6 +132,10 @@ class FileScannerGUI:
             self.style.configure('TCheckbutton', background='SystemButtonFace', foreground='black')
             self.style.configure('Treeview', background='white', foreground='black', fieldbackground='white')
             self.style.configure('Treeview.Heading', background='SystemButtonFace', foreground='black')
+            
+            # Сброс map стилей
+            self.style.map('TButton', background=[], foreground=[])
+            self.style.map('Treeview', background=[])
     
     def toggle_theme(self):
         """Переключить тему"""
@@ -85,13 +145,13 @@ class FileScannerGUI:
     def setup_hotkeys(self):
         """Настройка горячих клавиш"""
         self.root.bind('<F5>', lambda e: self.start_scan())
-        self.root.bind('<Control-s>', lambda e: self.save_results())
+        self.root.bind('<Control-s>', lambda e: self.save_json())
+        self.root.bind('<Control-t>', lambda e: self.save_txt())
         self.root.bind('<Delete>', lambda e: self.clear_results())
         self.root.bind('<F3>', lambda e: self.show_search_dialog())
         self.root.bind('<Control-f>', lambda e: self.show_filter_dialog())
-        self.root.bind('<Control-q>', lambda e: self.quick_save())
+        self.root.bind('<Control-q>', lambda e: self.toggle_theme())
         self.root.bind('<F1>', lambda e: self.show_help())
-        self.root.bind('<Control-t>', lambda e: self.toggle_theme())
     
     def center_window(self):
         """Центрирует окно на экране"""
@@ -116,7 +176,7 @@ class FileScannerGUI:
         header_frame = ttk.Frame(main_frame)
         header_frame.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
-        title_label = ttk.Label(header_frame, text="🗂️ Сканер файлов v2.1", font=('Arial', 16, 'bold'))
+        title_label = ttk.Label(header_frame, text="🗂️ Файл-Сканер v1.0", font=('Arial', 16, 'bold'))
         title_label.pack(side=tk.LEFT)
         
         theme_button = ttk.Button(header_frame, text="🌙", command=self.toggle_theme, width=3)
@@ -169,11 +229,11 @@ class FileScannerGUI:
                                      command=self.start_scan)
         self.scan_button.grid(row=0, column=0, padx=(0, 10))
         
-        ttk.Button(buttons_frame, text="💾 Сохранить (Ctrl+S)", 
-                  command=self.save_results).grid(row=0, column=1, padx=(0, 10))
+        ttk.Button(buttons_frame, text="💾 JSON (Ctrl+S)", 
+                  command=self.save_json).grid(row=0, column=1, padx=(0, 10))
         
-        ttk.Button(buttons_frame, text="⚡ JSON (Ctrl+Q)", 
-                  command=self.quick_save).grid(row=0, column=2, padx=(0, 10))
+        ttk.Button(buttons_frame, text="📄 TXT (Ctrl+T)", 
+                  command=self.save_txt).grid(row=0, column=2, padx=(0, 10))
         
         ttk.Button(buttons_frame, text="🔍 Поиск (F3)", 
                   command=self.show_search_dialog).grid(row=0, column=3, padx=(0, 10))
@@ -303,6 +363,10 @@ class FileScannerGUI:
         search_window.transient(self.root)
         search_window.grab_set()
         
+        # Применяем тему к диалогу
+        if self.dark_theme:
+            search_window.configure(bg='#1e1e1e')
+        
         # Центрируем окно
         search_window.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (400 // 2)
@@ -366,6 +430,10 @@ class FileScannerGUI:
         filter_window.geometry("400x200")
         filter_window.transient(self.root)
         filter_window.grab_set()
+        
+        # Применяем тему к диалогу
+        if self.dark_theme:
+            filter_window.configure(bg='#1e1e1e')
         
         # Центрируем окно
         filter_window.update_idletasks()
@@ -434,22 +502,43 @@ class FileScannerGUI:
         ttk.Button(buttons_frame, text="Сбросить", command=reset_filter).pack(side=tk.LEFT, padx=10)
         ttk.Button(buttons_frame, text="Отмена", command=filter_window.destroy).pack(side=tk.LEFT, padx=10)
     
-    def quick_save(self, format_type='json'):
-        """Быстрое сохранение на рабочий стол"""
+    def save_json(self):
+        """Быстрое сохранение в JSON"""
+        self.save_file_auto('json')
+    
+    def save_txt(self):
+        """Быстрое сохранение в TXT"""
+        self.save_file_auto('txt')
+    
+    def save_file_auto(self, format_type):
+        """Автоматическое сохранение рядом со скриптом"""
         if not self.files_data:
             messagebox.showwarning("Внимание", "Нет данных для сохранения!")
             return
         
         try:
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-            if not os.path.exists(desktop):
-                # Если Desktop не существует, сохраняем в домашнюю папку
-                desktop = os.path.expanduser("~")
+            # Получаем директорию где находится скрипт
+            script_dir = os.path.dirname(os.path.abspath(__file__))
             
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"files_scan_{timestamp}.{format_type}"
-            file_path = os.path.join(desktop, filename)
+            # Получаем название сканированной папки
+            scanned_folder = self.folder_var.get().strip()
+            if scanned_folder:
+                folder_name = os.path.basename(scanned_folder)
+                if not folder_name:  # Если это корень диска
+                    folder_name = scanned_folder.replace(':', '').replace('\\', '').replace('/', '')
+            else:
+                folder_name = "Неизвестно"
             
+            # Создаем имя файла
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            filename = f"{folder_name} - Анализ - {timestamp}.{format_type}"
+            
+            # Убираем недопустимые символы из имени файла
+            filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
+            
+            file_path = os.path.join(script_dir, filename)
+            
+            # Сохраняем файл
             if format_type == 'txt':
                 self.save_to_txt(file_path)
             elif format_type == 'csv':
@@ -457,11 +546,32 @@ class FileScannerGUI:
             elif format_type == 'json':
                 self.save_to_json(file_path)
             
-            messagebox.showinfo("Быстрое сохранение", f"Файл сохранен:\n{filename}\n\nРасположение: {desktop}")
+            messagebox.showinfo("Успех", f"Файл сохранен:\n{filename}\n\nПуть: {script_dir}")
+            
+            # Предлагаем открыть папку с файлом
+            if messagebox.askyesno("Открыть папку?", "Открыть папку с сохраненным файлом?"):
+                self.open_file_location(file_path)
+            
             return file_path
+        
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при быстром сохранении: {e}")
+            messagebox.showerror("Ошибка", f"Ошибка при сохранении: {e}")
             return None
+    
+    def open_file_location(self, file_path):
+        """Открыть папку с файлом"""
+        try:
+            folder = os.path.dirname(file_path)
+            if os.name == 'nt':  # Windows
+                os.startfile(folder)
+            elif os.name == 'posix':  # macOS and Linux
+                import subprocess
+                if hasattr(os, 'uname') and os.uname().sysname == 'Darwin':  # macOS
+                    subprocess.run(['open', folder])
+                else:  # Linux
+                    subprocess.run(['xdg-open', folder])
+        except Exception as e:
+            print(f"Couldn't open folder: {e}")
     
     def create_context_menu(self):
         """Создание контекстного меню"""
@@ -715,119 +825,6 @@ class FileScannerGUI:
         stats_text = f"📁 Файлов: {total_files} | 💾 Размер: {size_text} | 🏆 Топ: {ext_text}"
         self.stats_var.set(stats_text)
     
-    def save_results(self):
-        """Сохранение результатов"""
-        if not self.files_data:
-            messagebox.showwarning("Внимание", "Нет данных для сохранения!")
-            return
-        
-        # Диалог выбора формата
-        save_window = tk.Toplevel(self.root)
-        save_window.title("💾 Сохранение результатов")
-        save_window.geometry("350x250")
-        save_window.transient(self.root)
-        save_window.grab_set()
-        
-        # Центрируем окно
-        save_window.update_idletasks()
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (350 // 2)
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (250 // 2)
-        save_window.geometry(f"350x250+{x}+{y}")
-        
-        ttk.Label(save_window, text="Выберите формат файла:", font=('Arial', 12)).pack(pady=20)
-        
-        format_var = tk.StringVar(value="json")
-        
-        ttk.Radiobutton(save_window, text="📄 Текстовый файл (.txt)", 
-                       variable=format_var, value="txt").pack(anchor=tk.W, padx=50, pady=5)
-        ttk.Radiobutton(save_window, text="📊 CSV файл (.csv)", 
-                       variable=format_var, value="csv").pack(anchor=tk.W, padx=50, pady=5)
-        ttk.Radiobutton(save_window, text="🗂️ JSON файл (.json)", 
-                       variable=format_var, value="json").pack(anchor=tk.W, padx=50, pady=5)
-        
-        buttons_frame = ttk.Frame(save_window)
-        buttons_frame.pack(pady=20)
-        
-        def do_save():
-            format_type = format_var.get()
-            save_window.destroy()
-            self.save_file(format_type)
-        
-        def do_quick_save():
-            format_type = format_var.get()
-            save_window.destroy()
-            self.quick_save(format_type)
-        
-        ttk.Button(buttons_frame, text="💾 Сохранить как...", command=do_save).pack(side=tk.LEFT, padx=5)
-        ttk.Button(buttons_frame, text="⚡ Быстро", command=do_quick_save).pack(side=tk.LEFT, padx=5)
-        ttk.Button(buttons_frame, text="❌ Отмена", command=save_window.destroy).pack(side=tk.LEFT, padx=5)
-    
-    def save_file(self, format_type):
-        """Сохранение файла в выбранном формате"""
-        if not self.files_data:
-            messagebox.showwarning("Внимание", "Нет данных для сохранения!")
-            return
-            
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"files_scan_{timestamp}.{format_type}"
-        
-        try:
-            # Поднимаем главное окно на передний план
-            self.root.lift()
-            self.root.focus_force()
-            
-            # Определяем типы файлов для диалога
-            if format_type == 'txt':
-                filetypes = [("Текстовые файлы", "*.txt"), ("Все файлы", "*.*")]
-            elif format_type == 'csv':
-                filetypes = [("CSV файлы", "*.csv"), ("Все файлы", "*.*")]
-            elif format_type == 'json':
-                filetypes = [("JSON файлы", "*.json"), ("Все файлы", "*.*")]
-            else:
-                filetypes = [("Все файлы", "*.*")]
-            
-            file_path = filedialog.asksaveasfilename(
-                title=f"Сохранить как {format_type.upper()}",
-                defaultextension=f".{format_type}",
-                filetypes=filetypes,
-                initialname=filename
-            )
-            
-            if not file_path:
-                return
-            
-            # Сохраняем файл
-            if format_type == 'txt':
-                self.save_to_txt(file_path)
-            elif format_type == 'csv':
-                self.save_to_csv(file_path)
-            elif format_type == 'json':
-                self.save_to_json(file_path)
-            
-            messagebox.showinfo("Успех", f"Файл сохранен:\n{file_path}")
-            
-            # Предлагаем открыть папку с файлом
-            if messagebox.askyesno("Открыть папку?", "Открыть папку с сохраненным файлом?"):
-                self.open_file_location(file_path)
-        
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при сохранении: {e}")
-    
-    def open_file_location(self, file_path):
-        """Открыть папку с файлом"""
-        try:
-            folder = os.path.dirname(file_path)
-            if os.name == 'nt':  # Windows
-                os.startfile(folder)
-            elif os.name == 'posix':  # macOS and Linux
-                import subprocess
-                if hasattr(os, 'uname') and os.uname().sysname == 'Darwin':  # macOS
-                    subprocess.run(['open', folder])
-                else:  # Linux
-                    subprocess.run(['xdg-open', folder])
-        except Exception as e:
-            print(f"Couldn't open folder: {e}")
-    
     def save_to_txt(self, filename):
         """Сохранение в текстовый файл"""
         with open(filename, 'w', encoding='utf-8') as f:
@@ -917,9 +914,9 @@ class FileScannerGUI:
 ✨ НОВЫЕ ВОЗМОЖНОСТИ:
 • Сортировка колонок (клик по заголовку)
 • Цветовая индикация размеров файлов
-• Темная/светлая тема (🌙 или Ctrl+T)
+• Темная/светлая тема (🌙 или Ctrl+Q)
 • Прогресс сканирования в процентах
-• Быстрое сохранение на рабочий стол
+• Прямое сохранение без диалогов
 
 🎯 ОСНОВНЫЕ ВОЗМОЖНОСТИ:
 • Сканирование папок и всех подпапок
@@ -927,14 +924,14 @@ class FileScannerGUI:
 • Фильтрация по расширениям и размеру
 • Поиск по именам файлов
 • Статистика по типам файлов
-• Экспорт в TXT, CSV, JSON
+• Экспорт в TXT и JSON
 
 🔧 КАК ИСПОЛЬЗОВАТЬ:
-1. Выберите папку для сканирования
+1. Выберите папку для сканирования  
 2. Настройте опции (по желанию)
 3. Нажмите "Сканировать" (F5)
 4. Используйте поиск (F3) и фильтры (Ctrl+F)
-5. Сохраните отчет (Ctrl+S или Ctrl+Q)
+5. Сохраните отчет (Ctrl+S или Ctrl+T)
 
 🎨 ЦВЕТОВЫЕ ИНДИКАТОРЫ:
 🔴 Большие файлы (>100 MB)
@@ -945,10 +942,10 @@ class FileScannerGUI:
 F5 - Сканировать
 F3 - Поиск файлов
 F1 - Справка
-Ctrl+S - Сохранить как...
-Ctrl+Q - Быстрое сохранение
+Ctrl+S - Сохранить JSON
+Ctrl+T - Сохранить TXT
+Ctrl+Q - Переключить тему
 Ctrl+F - Фильтрация
-Ctrl+T - Переключить тему
 Del - Очистить результаты
 
 👆 КОНТЕКСТНОЕ МЕНЮ:
@@ -960,16 +957,16 @@ Del - Очистить результаты
 • Поиск: по имени файла
 
 💾 СОХРАНЕНИЕ:
-• Сохранить (Ctrl+S): выбор формата TXT/CSV/JSON
-• Быстро JSON (Ctrl+Q): мгновенное сохранение в JSON
+• JSON (Ctrl+S): быстрое сохранение в JSON
+• TXT (Ctrl+T): быстрое сохранение в TXT  
 • Все файлы сохраняются рядом со скриптом
 • Формат имени: "Название папки - Анализ - дата-время.расширение"
 
 🎨 ТЕМЫ:
 • Светлая тема (по умолчанию)
-• Темная тема (кнопка 🌙)
+• Темная тема (кнопка 🌙 или Ctrl+Q)
 
-АВТОР: File Scanner v2.1 Enhanced
+АВТОР: File Scanner v1.0 Final
 """
         
         messagebox.showinfo("Справка", help_text)
