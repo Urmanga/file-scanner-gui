@@ -19,18 +19,15 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: file-scanner-gui-windows
-            asset_name: file-scanner-gui-windows.exe
-            build_command: pyinstaller --onefile --windowed --name "File Scanner GUI" file_scanner_gui.py
+            executable_name: "File Scanner GUI.exe"
             
           - os: ubuntu-latest
             artifact_name: file-scanner-gui-linux
-            asset_name: file-scanner-gui-linux
-            build_command: pyinstaller --onefile --windowed --name "file-scanner-gui" file_scanner_gui.py
+            executable_name: "file-scanner-gui"
             
           - os: macos-latest
             artifact_name: file-scanner-gui-macos
-            asset_name: file-scanner-gui-macos.app
-            build_command: pyinstaller --onefile --windowed --name "File Scanner GUI" file_scanner_gui.py
+            executable_name: "File Scanner GUI.app"
 
     steps:
     - name: 📥 Checkout code
@@ -47,92 +44,126 @@ jobs:
         pip install pyinstaller
 
     - name: 🔨 Build executable
-      run: ${{ matrix.build_command }}
+      run: |
+        pyinstaller --onefile --windowed --name "File Scanner GUI" file_scanner_gui.py
 
-    - name: 📂 Prepare artifacts (Windows)
+    - name: 🛠 Debug - List dist contents
+      run: |
+        echo "Contents of dist directory:"
+        ls -la dist/ || dir dist\
+      shell: bash
+
+    - name: 📂 Prepare release directory
+      run: |
+        mkdir release
+      shell: bash
+
+    - name: 📂 Copy executable (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        mkdir release
-        copy "dist\File Scanner GUI.exe" "release\${{ matrix.asset_name }}"
+        copy "dist\File Scanner GUI.exe" "release\"
       shell: cmd
 
-    - name: 📂 Prepare artifacts (Linux)
+    - name: 📂 Copy executable (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        mkdir release
-        cp "dist/file-scanner-gui" "release/${{ matrix.asset_name }}"
-        chmod +x "release/${{ matrix.asset_name }}"
+        cp "dist/File Scanner GUI" "release/file-scanner-gui"
+        chmod +x "release/file-scanner-gui"
 
-    - name: 📂 Prepare artifacts (macOS)
+    - name: 📂 Copy executable (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        mkdir release
         cp -R "dist/File Scanner GUI.app" "release/"
-        cd release && zip -r "${{ matrix.asset_name }}.zip" "File Scanner GUI.app"
 
-    - name: 🗜️ Create ZIP archive (Windows & Linux)
-      if: matrix.os != 'macos-latest'
+    - name: 🛠 Debug - List release contents
+      run: |
+        echo "Contents of release directory:"
+        ls -la release/
+      shell: bash
+
+    - name: 🗜️ Create ZIP archive
       run: |
         cd release
         if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          powershell Compress-Archive -Path "${{ matrix.asset_name }}" -DestinationPath "${{ matrix.artifact_name }}.zip"
+          powershell Compress-Archive -Path "File Scanner GUI.exe" -DestinationPath "../${{ matrix.artifact_name }}.zip"
+        elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+          zip -r "../${{ matrix.artifact_name }}.zip" "File Scanner GUI.app"
         else
-          zip "${{ matrix.artifact_name }}.zip" "${{ matrix.asset_name }}"
+          zip "../${{ matrix.artifact_name }}.zip" "file-scanner-gui"
         fi
+        cd ..
+        ls -la *.zip
       shell: bash
 
     - name: 📤 Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact_name }}
-        path: release/
+        path: ${{ matrix.artifact_name }}.zip
         retention-days: 30
 
-    - name: 📋 Display build info
+    - name: 📋 Build summary
       run: |
         echo "✅ Build completed for ${{ matrix.os }}"
-        echo "📦 Artifact: ${{ matrix.artifact_name }}"
-        echo "🗂️ Asset: ${{ matrix.asset_name }}"
-        ls -la release/ || dir release\
+        echo "📦 Artifact: ${{ matrix.artifact_name }}.zip"
+        echo "🎯 Ready for download!"
 
-  # Создание релиза с автоматической загрузкой файлов
+  # Создание релиза с загрузкой файлов
   release:
-    name: 🎉 Create Release
+    name: 🎉 Upload to Release
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     
     steps:
-    - name: 📥 Download all artifacts
-      uses: actions/download-artifact@v3
+    - name: 📥 Download Windows artifact
+      uses: actions/download-artifact@v4
       with:
-        path: artifacts
+        name: file-scanner-gui-windows
+        path: ./
 
-    - name: 📋 Display downloaded artifacts
-      run: find artifacts -type f -name "*.zip" -o -name "*.app"
+    - name: 📥 Download Linux artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: file-scanner-gui-linux
+        path: ./
 
-    - name: 🚀 Upload release assets
+    - name: 📥 Download macOS artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: file-scanner-gui-macos
+        path: ./
+
+    - name: 📋 List downloaded files
+      run: |
+        echo "Downloaded files:"
+        ls -la *.zip
+
+    - name: 🚀 Upload to release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          artifacts/**/*.zip
+          file-scanner-gui-windows.zip
+          file-scanner-gui-linux.zip
+          file-scanner-gui-macos.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Уведомление о успешной сборке
+  # Уведомление об успехе
   notify:
-    name: 📢 Notify Success
+    name: 📢 Success Notification
     needs: build
     runs-on: ubuntu-latest
     if: success()
     
     steps:
-    - name: 🎊 Success notification
+    - name: 🎊 Success message
       run: |
         echo "🎉 All builds completed successfully!"
-        echo "✅ Windows executable ready"
-        echo "✅ Linux executable ready" 
-        echo "✅ macOS app bundle ready"
         echo ""
-        echo "📦 Artifacts are available in the Actions tab"
-        echo "🔗 Download them from: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        echo "📦 Available downloads:"
+        echo "  • Windows: file-scanner-gui-windows.zip" 
+        echo "  • Linux:   file-scanner-gui-linux.zip"
+        echo "  • macOS:   file-scanner-gui-macos.zip"
+        echo ""
+        echo "🎯 Ready for distribution!"
