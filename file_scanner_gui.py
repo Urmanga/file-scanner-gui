@@ -8,8 +8,7 @@ from datetime import datetime
 import threading
 import webbrowser
 import re
-import asyncio
-import aiohttp
+import requests
 
 print("🚀 ФАЙЛ-СКАНЕР v1.0 С AI ТЕГАМИ ЗАГРУЖЕН!", datetime.now())
 
@@ -34,8 +33,18 @@ class FileScannerGUI:
         self.daily_limit = tk.StringVar(value="1.00")
         self.tokens_used_today = 0
         
+        # Дополнительные AI переменные
+        self.ai_mode = tk.StringVar(value="hybrid")
+        self.ai_for_unknown = tk.BooleanVar(value=True)
+        self.ai_for_documents = tk.BooleanVar(value=True)
+        self.ai_for_projects = tk.BooleanVar(value=False)
+        self.enable_cache = tk.BooleanVar(value=True)
+        
         # Темная тема
         self.dark_theme = False
+        
+        # AI теги
+        self.ai_tag_patterns = self.load_ai_patterns()
         
         # Настройка стиля
         self.setup_styles()
@@ -48,6 +57,9 @@ class FileScannerGUI:
         
         # Центрируем окно
         self.center_window()
+        
+        # Загружаем сохраненные настройки
+        self.load_settings()
     
     def setup_styles(self):
         """Настройка стилей"""
@@ -64,18 +76,15 @@ class FileScannerGUI:
     def apply_theme(self):
         """Применить текущую тему"""
         if self.dark_theme:
-            # Темная тема - полное погружение в темноту
             self.root.configure(bg='#1e1e1e')
             self.style.theme_use('clam')
             
-            # Основные элементы
             self.style.configure('TLabel', background='#1e1e1e', foreground='#ffffff')
             self.style.configure('TFrame', background='#1e1e1e')
             self.style.configure('TLabelFrame', background='#1e1e1e', foreground='#ffffff', 
                                borderwidth=1, relief='solid')
             self.style.configure('TLabelFrame.Label', background='#1e1e1e', foreground='#ffffff')
             
-            # Кнопки
             self.style.configure('TButton', 
                                background='#404040', 
                                foreground='#ffffff',
@@ -84,7 +93,6 @@ class FileScannerGUI:
             self.style.map('TButton',
                           background=[('active', '#505050'), ('pressed', '#606060')])
             
-            # Поля ввода
             self.style.configure('TEntry', 
                                background='#2d2d2d', 
                                foreground='#ffffff',
@@ -92,13 +100,11 @@ class FileScannerGUI:
                                borderwidth=1,
                                fieldbackground='#2d2d2d')
             
-            # Чекбоксы
             self.style.configure('TCheckbutton', 
                                background='#1e1e1e', 
                                foreground='#ffffff',
                                focuscolor='none')
             
-            # Таблица
             self.style.configure('Treeview', 
                                background='#2d2d2d', 
                                foreground='#ffffff', 
@@ -111,13 +117,11 @@ class FileScannerGUI:
             self.style.map('Treeview',
                           background=[('selected', '#0078d4')])
             
-            # Прогресс-бар
             self.style.configure('TProgressbar',
                                background='#0078d4',
                                troughcolor='#404040',
                                borderwidth=1)
             
-            # Скроллбары
             self.style.configure('Vertical.TScrollbar',
                                background='#404040',
                                troughcolor='#2d2d2d',
@@ -126,13 +130,10 @@ class FileScannerGUI:
                                background='#404040',
                                troughcolor='#2d2d2d',
                                borderwidth=1)
-            
         else:
-            # Светлая тема
             self.root.configure(bg='SystemButtonFace')
             self.style.theme_use('clam')
             
-            # Сброс всех настроек на стандартные
             self.style.configure('TLabel', background='SystemButtonFace', foreground='black')
             self.style.configure('TFrame', background='SystemButtonFace')
             self.style.configure('TLabelFrame', background='SystemButtonFace', foreground='black')
@@ -142,7 +143,6 @@ class FileScannerGUI:
             self.style.configure('Treeview', background='white', foreground='black', fieldbackground='white')
             self.style.configure('Treeview.Heading', background='SystemButtonFace', foreground='black')
             
-            # Сброс map стилей
             self.style.map('TButton', background=[], foreground=[])
             self.style.map('Treeview', background=[])
     
@@ -174,49 +174,41 @@ class FileScannerGUI:
     def load_ai_patterns(self):
         """Загрузить паттерны для AI тегирования"""
         return {
-            # Работа и документы
             'work': {
                 'patterns': ['отчет', 'report', 'договор', 'contract', 'презентация', 'presentation', 
                            'meeting', 'совещание', 'budget', 'бюджет', 'план', 'plan', 'invoice', 'счет'],
                 'tags': ['работа', 'документы', 'офис']
             },
-            # Программирование
             'coding': {
                 'patterns': [r'\.py$', r'\.js$', r'\.html$', r'\.css$', r'\.cpp$', r'\.java$', 'src', 'code', 
                            'project', 'проект', 'git', 'repo', 'api', 'app'],
                 'tags': ['код', 'программирование', 'разработка']
             },
-            # Медиа
             'media': {
                 'patterns': [r'\.mp4$', r'\.avi$', r'\.jpg$', r'\.png$', r'\.mp3$', 'photo', 'video', 
                            'фото', 'видео', 'music', 'музыка', 'movie', 'фильм'],
                 'tags': ['медиа', 'развлечения', 'контент']
             },
-            # Личное
             'personal': {
                 'patterns': ['vacation', 'отпуск', 'family', 'семья', 'birthday', 'день_рождения',
                            'personal', 'личное', 'diary', 'дневник', 'home', 'дом'],
                 'tags': ['личное', 'семья', 'быт']
             },
-            # Учеба
             'education': {
                 'patterns': ['study', 'учеба', 'homework', 'домашка', 'exam', 'экзамен', 'course', 
                            'курс', 'lecture', 'лекция', 'university', 'университет', 'school'],
                 'tags': ['учеба', 'образование', 'знания']
             },
-            # Игры
             'games': {
                 'patterns': ['game', 'игра', 'steam', r'\.exe$', 'mod', 'мод', 'save', 'сохранение',
                            'minecraft', 'gta', 'cs', 'wow'],
                 'tags': ['игры', 'развлечения', 'досуг']
             },
-            # Архивы и бэкапы
             'archive': {
                 'patterns': [r'\.zip$', r'\.rar$', r'\.7z$', 'backup', 'бэкап', 'archive', 'архив',
                            'old', 'старый', 'copy', 'копия'],
                 'tags': ['архив', 'бэкап', 'хранение']
             },
-            # Временные файлы
             'temp': {
                 'patterns': ['temp', 'tmp', 'cache', 'кэш', r'\.log$', r'\.tmp$', r'~\$', 
                            'новый документ', 'new document', 'untitled'],
@@ -235,14 +227,12 @@ class FileScannerGUI:
         
         tags = set()
         
-        # Анализ по паттернам
         for category, data in self.ai_tag_patterns.items():
             for pattern in data['patterns']:
                 if re.search(pattern, filename) or re.search(pattern, filepath):
                     tags.update(data['tags'])
                     break
         
-        # Анализ по размеру
         size_mb = file_info['size_mb']
         if size_mb > 1000:
             tags.add('большой')
@@ -251,7 +241,6 @@ class FileScannerGUI:
         else:
             tags.add('маленький')
         
-        # Анализ по дате
         try:
             modified_date = datetime.strptime(file_info['modified_date'], '%Y-%m-%d %H:%M:%S')
             days_old = (datetime.now() - modified_date).days
@@ -265,7 +254,6 @@ class FileScannerGUI:
         except:
             pass
         
-        # Анализ по расширению
         if extension in ['.exe', '.msi', '.dmg']:
             tags.add('приложение')
         elif extension in ['.txt', '.doc', '.docx', '.pdf']:
@@ -277,7 +265,80 @@ class FileScannerGUI:
         elif extension in ['.mp4', '.avi', '.mkv']:
             tags.add('видео')
         
-        return list(tags)[:5]  # Максимум 5 тегов
+        return list(tags)[:5]
+    
+    def generate_openai_tags(self, file_info):
+        """Генерация тегов через OpenAI API"""
+        if not self.openai_enabled.get() or not self.openai_api_key.get():
+            return []
+        
+        try:
+            daily_limit = float(self.daily_limit.get())
+            estimated_cost = 0.0015 * 100 / 1000
+            
+            if estimated_cost > daily_limit:
+                print(f"Превышен дневной лимит: ${estimated_cost:.4f} > ${daily_limit}")
+                return []
+            
+            filename = file_info['name']
+            file_extension = file_info['extension']
+            file_size = file_info['size_mb']
+            
+            prompt = f"""Проанализируй файл и создай до 5 коротких тегов на русском языке:
+
+Имя файла: {filename}
+Расширение: {file_extension}
+Размер: {file_size} MB
+
+Создай теги которые описывают:
+- Тип контента (документ, изображение, код, etc.)
+- Назначение (работа, личное, учеба, etc.)
+- Особенности (большой, важный, etc.)
+
+Ответ только теги через запятую, без объяснений."""
+            
+            headers = {
+                'Authorization': f'Bearer {self.openai_api_key.get()}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'model': self.openai_model.get(),
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 100,
+                'temperature': 0.3
+            }
+            
+            response = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers=headers,
+                json=data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                content = result['choices'][0]['message']['content'].strip()
+                tags = [tag.strip() for tag in content.split(',') if tag.strip()]
+                self.tokens_used_today += result.get('usage', {}).get('total_tokens', 0)
+                return tags[:5]
+            else:
+                print(f"OpenAI API Error: {response.status_code} - {response.text}")
+                return []
+                
+        except requests.RequestException as e:
+            print(f"Ошибка подключения к OpenAI: {e}")
+            return []
+        except Exception as e:
+            print(f"Ошибка OpenAI API: {e}")
+            return []
+    
+    def combine_ai_tags(self, file_info):
+        """Объединить локальные и OpenAI теги"""
+        local_tags = self.generate_ai_tags(file_info)
+        openai_tags = self.generate_openai_tags(file_info)
+        all_tags = list(set(local_tags + openai_tags))
+        return all_tags[:7]
     
     def save_json(self):
         """Быстрое сохранение в JSON"""
@@ -304,11 +365,11 @@ class FileScannerGUI:
             'openai_api_key': self.openai_api_key.get(),
             'openai_model': self.openai_model.get(),
             'daily_limit': self.daily_limit.get(),
-            'ai_mode': getattr(self, 'ai_mode', tk.StringVar(value="hybrid")).get(),
-            'ai_for_unknown': getattr(self, 'ai_for_unknown', tk.BooleanVar(value=True)).get(),
-            'ai_for_documents': getattr(self, 'ai_for_documents', tk.BooleanVar(value=True)).get(),
-            'ai_for_projects': getattr(self, 'ai_for_projects', tk.BooleanVar(value=False)).get(),
-            'enable_cache': getattr(self, 'enable_cache', tk.BooleanVar(value=True)).get(),
+            'ai_mode': self.ai_mode.get(),
+            'ai_for_unknown': self.ai_for_unknown.get(),
+            'ai_for_documents': self.ai_for_documents.get(),
+            'ai_for_projects': self.ai_for_projects.get(),
+            'enable_cache': self.enable_cache.get(),
             'ai_tag_patterns': self.ai_tag_patterns,
             'dark_theme': self.dark_theme
         }
@@ -326,23 +387,25 @@ class FileScannerGUI:
         try:
             settings_file = self.get_settings_file()
             if not os.path.exists(settings_file):
-                return  # Файл настроек не существует, используем defaults
+                return
             
             with open(settings_file, 'r', encoding='utf-8') as f:
                 settings = json.load(f)
             
-            # Загружаем основные настройки
             self.ai_enabled.set(settings.get('ai_enabled', True))
             self.openai_enabled.set(settings.get('openai_enabled', False))
             self.openai_api_key.set(settings.get('openai_api_key', ''))
             self.openai_model.set(settings.get('openai_model', 'gpt-3.5-turbo'))
             self.daily_limit.set(settings.get('daily_limit', '1.00'))
+            self.ai_mode.set(settings.get('ai_mode', 'hybrid'))
+            self.ai_for_unknown.set(settings.get('ai_for_unknown', True))
+            self.ai_for_documents.set(settings.get('ai_for_documents', True))
+            self.ai_for_projects.set(settings.get('ai_for_projects', False))
+            self.enable_cache.set(settings.get('enable_cache', True))
             
-            # Загружаем пользовательские правила AI
             if 'ai_tag_patterns' in settings:
                 self.ai_tag_patterns.update(settings['ai_tag_patterns'])
             
-            # Загружаем тему
             if settings.get('dark_theme', False):
                 self.dark_theme = True
                 self.apply_theme()
@@ -351,21 +414,17 @@ class FileScannerGUI:
             
         except Exception as e:
             print(f"Ошибка загрузки настроек: {e}")
-            # Если ошибка загрузки, используем defaults
     
     def create_widgets(self):
         """Создание всех элементов интерфейса"""
-        # Основной фрейм
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Настройка растяжения
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(5, weight=1)
         
-        # Заголовок с кнопкой темы
         header_frame = ttk.Frame(main_frame)
         header_frame.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
@@ -375,7 +434,6 @@ class FileScannerGUI:
         theme_button = ttk.Button(header_frame, text="🌙", command=self.toggle_theme, width=3)
         theme_button.pack(side=tk.RIGHT, padx=(20, 0))
         
-        # Выбор папки
         folder_frame = ttk.LabelFrame(main_frame, text="Выбор папки", padding="10")
         folder_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         folder_frame.columnconfigure(1, weight=1)
@@ -388,11 +446,9 @@ class FileScannerGUI:
         
         ttk.Button(folder_frame, text="Обзор...", command=self.browse_folder).grid(row=0, column=2)
         
-        # Настройки
         settings_frame = ttk.LabelFrame(main_frame, text="Настройки сканирования", padding="10")
         settings_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Чекбоксы
         options_frame = ttk.Frame(settings_frame)
         options_frame.grid(row=0, column=0, columnspan=2, sticky=tk.W)
         
@@ -404,11 +460,9 @@ class FileScannerGUI:
         ttk.Checkbutton(options_frame, text="Показать детали", 
                        variable=self.show_details).grid(row=0, column=1, sticky=tk.W)
         
-        # Убираем дубликат чекбокса - AI теги настраиваются в настройках
         ttk.Label(options_frame, text="🤖 AI: настройки в F2", 
                  font=('Arial', 8)).grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
         
-        # Фильтр расширений
         ttk.Label(settings_frame, text="Фильтр расширений:").grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
         
         self.extensions_var = tk.StringVar()
@@ -418,7 +472,6 @@ class FileScannerGUI:
         ttk.Label(settings_frame, text="(например: .txt .py .jpg)", font=('Arial', 8)).grid(
             row=2, column=1, sticky=tk.W, padx=(10, 0), pady=(2, 0))
         
-        # Кнопки действий
         buttons_frame = ttk.Frame(main_frame)
         buttons_frame.grid(row=3, column=0, columnspan=3, pady=(0, 10))
         
@@ -436,18 +489,17 @@ class FileScannerGUI:
                   command=self.save_txt).grid(row=0, column=3, padx=(0, 10))
         
         ttk.Button(buttons_frame, text="🔍 Поиск (F3)", 
-                  command=self.show_search_dialog).grid(row=0, column=3, padx=(0, 10))
+                  command=self.show_search_dialog).grid(row=0, column=4, padx=(0, 10))
         
         ttk.Button(buttons_frame, text="⚙️ AI Настройки", 
-                  command=self.show_ai_settings).grid(row=0, column=4, padx=(0, 10))
+                  command=self.show_ai_settings).grid(row=0, column=5, padx=(0, 10))
         
         ttk.Button(buttons_frame, text="🗑️ Очистить", 
-                  command=self.clear_results).grid(row=0, column=5, padx=(0, 10))
+                  command=self.clear_results).grid(row=0, column=6, padx=(0, 10))
         
         ttk.Button(buttons_frame, text="❓ Справка (F1)", 
-                  command=self.show_help).grid(row=0, column=6)
+                  command=self.show_help).grid(row=0, column=7)
         
-        # Прогресс-бар с процентами
         progress_frame = ttk.Frame(main_frame)
         progress_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         progress_frame.columnconfigure(0, weight=1)
@@ -459,22 +511,18 @@ class FileScannerGUI:
         progress_label = ttk.Label(progress_frame, textvariable=self.progress_var)
         progress_label.grid(row=1, column=0)
         
-        # Результаты
         results_frame = ttk.LabelFrame(main_frame, text="Результаты", padding="5")
         results_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         results_frame.columnconfigure(0, weight=1)
         results_frame.rowconfigure(1, weight=1)
         
-        # Статистика
         self.stats_var = tk.StringVar(value="Статистика появится после сканирования")
         stats_label = ttk.Label(results_frame, textvariable=self.stats_var, font=('Arial', 10, 'bold'))
         stats_label.grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
         
-        # Таблица результатов с сортировкой
         columns = ('name', 'path', 'size', 'extension', 'modified', 'tags')
         self.tree = ttk.Treeview(results_frame, columns=columns, show='headings', height=15)
         
-        # Настройка колонок с сортировкой
         self.tree.heading('name', text='Имя файла ▲▼', command=lambda: self.sort_column('name'))
         self.tree.heading('path', text='Путь ▲▼', command=lambda: self.sort_column('path'))
         self.tree.heading('size', text='Размер (MB) ▲▼', command=lambda: self.sort_column('size'))
@@ -489,27 +537,17 @@ class FileScannerGUI:
         self.tree.column('modified', width=120)
         self.tree.column('tags', width=200)
         
-        # Переменные для сортировки
         self.sort_column_name = None
         self.sort_reverse = False
         
-        # AI теги
-        self.ai_tag_patterns = self.load_ai_patterns()
-        
-        # Загружаем сохраненные настройки
-        self.load_settings()
-        
-        # Скроллбары
         v_scrollbar = ttk.Scrollbar(results_frame, orient=tk.VERTICAL, command=self.tree.yview)
         h_scrollbar = ttk.Scrollbar(results_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
         self.tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
         
-        # Размещение таблицы и скроллбаров
         self.tree.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         v_scrollbar.grid(row=1, column=1, sticky=(tk.N, tk.S))
         h_scrollbar.grid(row=2, column=0, sticky=(tk.W, tk.E))
         
-        # Контекстное меню
         self.create_context_menu()
     
     def sort_column(self, column):
@@ -520,19 +558,17 @@ class FileScannerGUI:
             self.sort_reverse = False
             self.sort_column_name = column
         
-        # Получаем данные для сортировки
         data = []
         for child in self.tree.get_children():
             values = self.tree.item(child)['values']
             data.append((child, values))
         
-        # Определяем функцию сортировки
         if column == 'name':
             data.sort(key=lambda x: x[1][0].lower(), reverse=self.sort_reverse)
         elif column == 'path':
             data.sort(key=lambda x: x[1][1].lower(), reverse=self.sort_reverse)
         elif column == 'size':
-            data.sort(key=lambda x: float(x[1][2]) if x[1][2] else 0, reverse=self.sort_reverse)
+            data.sort(key=lambda x: float(str(x[1][2]).replace(' 🔴', '').replace(' 🟡', '').replace(' 🟢', '')) if x[1][2] else 0, reverse=self.sort_reverse)
         elif column == 'extension':
             data.sort(key=lambda x: x[1][3].lower(), reverse=self.sort_reverse)
         elif column == 'modified':
@@ -540,11 +576,9 @@ class FileScannerGUI:
         elif column == 'tags':
             data.sort(key=lambda x: x[1][5], reverse=self.sort_reverse)
         
-        # Переупорядочиваем элементы
         for index, (child, values) in enumerate(data):
             self.tree.move(child, '', index)
         
-        # Обновляем заголовки
         self.update_column_headers()
     
     def update_column_headers(self):
@@ -577,11 +611,9 @@ class FileScannerGUI:
         search_window.transient(self.root)
         search_window.grab_set()
         
-        # Применяем тему к диалогу
         if self.dark_theme:
             search_window.configure(bg='#1e1e1e')
         
-        # Центрируем окно
         search_window.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (400 // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (150 // 2)
@@ -599,11 +631,9 @@ class FileScannerGUI:
             if not query:
                 return
             
-            # Очищаем текущие результаты
             for item in self.tree.get_children():
                 self.tree.delete(item)
             
-            # Фильтруем и показываем только найденные файлы
             found_count = 0
             for file_info in self.files_data:
                 if (query in file_info['name'].lower() or 
@@ -633,295 +663,7 @@ class FileScannerGUI:
         ttk.Button(buttons_frame, text="Сбросить", command=reset_search).pack(side=tk.LEFT, padx=10)
         ttk.Button(buttons_frame, text="Отмена", command=search_window.destroy).pack(side=tk.LEFT, padx=10)
         
-        # Enter для поиска
         search_entry.bind('<Return>', lambda e: perform_search())
-    
-    def show_ai_settings(self):
-        """Показать настройки AI"""
-        settings_window = tk.Toplevel(self.root)
-        settings_window.title("⚙️ Настройки AI")
-        settings_window.geometry("600x600")
-        settings_window.transient(self.root)
-        settings_window.grab_set()
-        settings_window.resizable(True, True)
-        
-        # Применяем тему к диалогу
-        if self.dark_theme:
-            settings_window.configure(bg='#1e1e1e')
-        
-        # Центрируем окно
-        settings_window.update_idletasks()
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (600 // 2)
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (600 // 2)
-        settings_window.geometry(f"600x600+{x}+{y}")
-        
-        # Создаем Notebook для вкладок
-        notebook = ttk.Notebook(settings_window)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Вкладка 1: Локальные правила
-        local_frame = ttk.Frame(notebook)
-        notebook.add(local_frame, text="🤖 Локальные правила")
-        
-        # Заголовок локальных правил
-        ttk.Label(local_frame, text="Настройка локальных AI правил", 
-                 font=('Arial', 14, 'bold')).pack(pady=10)
-        
-        # Включение локальных правил
-        local_settings_frame = ttk.LabelFrame(local_frame, text="Основные настройки", padding="10")
-        local_settings_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        ttk.Checkbutton(local_settings_frame, text="Включить локальные AI теги", 
-                       variable=self.ai_enabled).pack(anchor=tk.W)
-        
-        # Список правил
-        rules_frame = ttk.LabelFrame(local_frame, text="Активные правила", padding="10")
-        rules_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # Создаем Treeview для правил
-        rules_columns = ('category', 'patterns', 'tags', 'enabled')
-        rules_tree = ttk.Treeview(rules_frame, columns=rules_columns, show='headings', height=8)
-        
-        rules_tree.heading('category', text='Категория')
-        rules_tree.heading('patterns', text='Паттерны')
-        rules_tree.heading('tags', text='Теги')
-        rules_tree.heading('enabled', text='Активно')
-        
-        rules_tree.column('category', width=100)
-        rules_tree.column('patterns', width=200)
-        rules_tree.column('tags', width=150)
-        rules_tree.column('enabled', width=80)
-        
-        # Заполняем правила
-        for category, data in self.ai_tag_patterns.items():
-            patterns_str = ', '.join(data['patterns'][:3]) + ('...' if len(data['patterns']) > 3 else '')
-            tags_str = ', '.join(data['tags'])
-            rules_tree.insert('', 'end', values=(
-                category.title(),
-                patterns_str,
-                tags_str,
-                "✅"
-            ))
-        
-        rules_tree.pack(fill=tk.BOTH, expand=True)
-        
-        # Кнопки управления правилами
-        local_buttons_frame = ttk.Frame(local_frame)
-        local_buttons_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        def add_rule():
-            self.show_rule_editor(None, rules_tree)
-        
-        def edit_rule():
-            selected = rules_tree.selection()
-            if not selected:
-                messagebox.showwarning("Выбор", "Выберите правило для редактирования!")
-                return
-            self.show_rule_editor(selected[0], rules_tree)
-        
-        def delete_rule():
-            selected = rules_tree.selection()
-            if not selected:
-                messagebox.showwarning("Выбор", "Выберите правило для удаления!")
-                return
-            
-            if messagebox.askyesno("Удаление", "Удалить выбранное правило?"):
-                item = selected[0]
-                category = rules_tree.item(item)['values'][0].lower()
-                if category in self.ai_tag_patterns:
-                    del self.ai_tag_patterns[category]
-                rules_tree.delete(item)
-                self.save_settings()  # Автосохранение
-                messagebox.showinfo("Успех", "Правило удалено!")
-        
-        ttk.Button(local_buttons_frame, text="➕ Добавить правило", command=add_rule).pack(side=tk.LEFT, padx=5)
-        ttk.Button(local_buttons_frame, text="✏️ Редактировать", command=edit_rule).pack(side=tk.LEFT, padx=5)
-        ttk.Button(local_buttons_frame, text="🗑️ Удалить", command=delete_rule).pack(side=tk.LEFT, padx=5)
-        
-        # Вкладка 2: OpenAI
-        openai_frame = ttk.Frame(notebook)
-        notebook.add(openai_frame, text="🧠 OpenAI")
-        
-        # Заголовок OpenAI
-        ttk.Label(openai_frame, text="Настройка OpenAI GPT", 
-                 font=('Arial', 14, 'bold')).pack(pady=10)
-        
-        # Основные настройки OpenAI
-        openai_main_frame = ttk.LabelFrame(openai_frame, text="Основные настройки", padding="15")
-        openai_main_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Включение OpenAI
-        ttk.Checkbutton(openai_main_frame, text="Включить OpenAI анализ", 
-                       variable=self.openai_enabled).pack(anchor=tk.W, pady=5)
-        
-        # API ключ
-        api_frame = ttk.Frame(openai_main_frame)
-        api_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(api_frame, text="🔑 API ключ:").pack(side=tk.LEFT)
-        api_entry = ttk.Entry(api_frame, textvariable=self.openai_api_key, width=40, show="*")
-        api_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
-        
-        def toggle_api_visibility():
-            current_show = api_entry.cget('show')
-            if current_show == '*':
-                api_entry.configure(show='')
-                show_btn.configure(text='🙈')
-            else:
-                api_entry.configure(show='*')
-                show_btn.configure(text='👁️')
-        
-        show_btn = ttk.Button(api_frame, text="👁️", width=3, command=toggle_api_visibility)
-        show_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        
-        # Модель
-        model_frame = ttk.Frame(openai_main_frame)
-        model_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(model_frame, text="🎯 Модель:").pack(side=tk.LEFT)
-        model_combo = ttk.Combobox(model_frame, textvariable=self.openai_model, 
-                                  values=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"], 
-                                  state="readonly", width=20)
-        model_combo.pack(side=tk.LEFT, padx=10)
-        
-        # Лимиты и статистика
-        limits_frame = ttk.LabelFrame(openai_frame, text="Лимиты и статистика", padding="15")
-        limits_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Дневной лимит
-        limit_frame = ttk.Frame(limits_frame)
-        limit_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(limit_frame, text="💰 Дневной лимит:").pack(side=tk.LEFT)
-        ttk.Entry(limit_frame, textvariable=self.daily_limit, width=10).pack(side=tk.LEFT, padx=10)
-        ttk.Label(limit_frame, text="USD").pack(side=tk.LEFT)
-        
-        # Статистика
-        stats_frame = ttk.Frame(limits_frame)
-        stats_frame.pack(fill=tk.X, pady=10)
-        
-        self.tokens_label = ttk.Label(stats_frame, text=f"📊 Токенов сегодня: {self.tokens_used_today}")
-        self.tokens_label.pack(anchor=tk.W)
-        
-        cost_today = self.tokens_used_today * 0.0015 / 1000  # Примерная стоимость
-        self.cost_label = ttk.Label(stats_frame, text=f"💸 Потрачено сегодня: ${cost_today:.4f}")
-        self.cost_label.pack(anchor=tk.W, pady=2)
-        
-        # Тестирование
-        test_frame = ttk.LabelFrame(openai_frame, text="Тестирование", padding="15")
-        test_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        test_input_frame = ttk.Frame(test_frame)
-        test_input_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(test_input_frame, text="🧪 Тест файл:").pack(side=tk.LEFT)
-        test_entry = ttk.Entry(test_input_frame, width=30)
-        test_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
-        test_entry.insert(0, "presentation_Q4_2023.pptx")
-        
-        def test_ai():
-            filename = test_entry.get()
-            if not filename:
-                return
-            
-            test_result.delete(1.0, tk.END)
-            test_result.insert(tk.END, f"Анализ файла '{filename}'...\n\n")
-            settings_window.update()
-            
-            # Реальный тест OpenAI
-            if self.openai_api_key.get():
-                fake_file_info = {
-                    'name': filename,
-                    'size_mb': 2.5,
-                    'extension': os.path.splitext(filename)[1] or '.unknown'
-                }
-                
-                ai_tags = self.generate_openai_tags(fake_file_info)
-                
-                if ai_tags:
-                    test_result.insert(tk.END, f"✅ OpenAI теги: {', '.join(ai_tags)}\n")
-                    test_result.insert(tk.END, f"⚡ Токенов: ~50\n")
-                    test_result.insert(tk.END, f"💰 Стоимость: ~$0.0001")
-                else:
-                    test_result.insert(tk.END, "❌ Ошибка получения тегов от OpenAI\nПроверьте API ключ и подключение")
-            else:
-                test_result.insert(tk.END, "❌ Введите API ключ для тестирования")
-        
-        ttk.Button(test_input_frame, text="🚀 Тестировать", command=test_ai).pack(side=tk.RIGHT, padx=(5, 0))
-        
-        # Результат теста
-        test_result = tk.Text(test_frame, height=4, wrap=tk.WORD)
-        test_result.pack(fill=tk.X, pady=5)
-        
-        # Вкладка 3: Продвинутые настройки
-        advanced_frame = ttk.Frame(notebook)
-        notebook.add(advanced_frame, text="🔧 Продвинутые")
-        
-        ttk.Label(advanced_frame, text="Дополнительные настройки", 
-                 font=('Arial', 14, 'bold')).pack(pady=10)
-        
-        # Режимы работы
-        mode_frame = ttk.LabelFrame(advanced_frame, text="Режим работы", padding="15")
-        mode_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.ai_mode = tk.StringVar(value="hybrid")
-        
-        ttk.Radiobutton(mode_frame, text="🤖 Только локальные правила (быстро, бесплатно)", 
-                       variable=self.ai_mode, value="local").pack(anchor=tk.W, pady=3)
-        ttk.Radiobutton(mode_frame, text="🧠 Только OpenAI (медленно, точно)", 
-                       variable=self.ai_mode, value="openai").pack(anchor=tk.W, pady=3)
-        ttk.Radiobutton(mode_frame, text="⚡ Гибрид: локальные + AI для сложных файлов", 
-                       variable=self.ai_mode, value="hybrid").pack(anchor=tk.W, pady=3)
-        
-        # Фильтры для AI
-        ai_filters_frame = ttk.LabelFrame(advanced_frame, text="Когда использовать OpenAI", padding="15")
-        ai_filters_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.ai_for_unknown = tk.BooleanVar(value=True)
-        self.ai_for_documents = tk.BooleanVar(value=True)
-        self.ai_for_projects = tk.BooleanVar(value=False)
-        
-        ttk.Checkbutton(ai_filters_frame, text="Для неизвестных файлов", 
-                       variable=self.ai_for_unknown).pack(anchor=tk.W, pady=2)
-        ttk.Checkbutton(ai_filters_frame, text="Для документов (.pdf, .docx, .txt)", 
-                       variable=self.ai_for_documents).pack(anchor=tk.W, pady=2)
-        ttk.Checkbutton(ai_filters_frame, text="Для проектов и папок", 
-                       variable=self.ai_for_projects).pack(anchor=tk.W, pady=2)
-        
-        # Кэширование
-        cache_frame = ttk.LabelFrame(advanced_frame, text="Кэширование", padding="15")
-        cache_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.enable_cache = tk.BooleanVar(value=True)
-        ttk.Checkbutton(cache_frame, text="Кэшировать результаты AI (экономия токенов)", 
-                       variable=self.enable_cache).pack(anchor=tk.W, pady=2)
-        
-        cache_info = ttk.Label(cache_frame, text="📁 Кэш: 0 файлов, 0 MB", font=('Arial', 9))
-        cache_info.pack(anchor=tk.W, pady=2)
-        
-        ttk.Button(cache_frame, text="🗑️ Очистить кэш").pack(anchor=tk.W, pady=5)
-        
-        # Кнопки внизу окна настроек
-        bottom_frame = ttk.Frame(settings_window)
-        bottom_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        def save_settings():
-            if self.save_settings():
-                messagebox.showinfo("Настройки", "✅ Настройки AI сохранены!\n\nФайл: ai_settings.json")
-            else:
-                messagebox.showerror("Ошибка", "❌ Ошибка сохранения настроек!")
-            settings_window.destroy()
-        
-        def test_connection():
-            if not self.openai_api_key.get():
-                messagebox.showwarning("Ошибка", "Введите API ключ!")
-                return
-            
-            messagebox.showinfo("Тест", "Тестирование подключения к OpenAI...\n✅ Подключение успешно!")
-        
-        ttk.Button(bottom_frame, text="🧪 Тест подключения", command=test_connection).pack(side=tk.LEFT, padx=5)
-        ttk.Button(bottom_frame, text="💾 Сохранить", command=save_settings).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(bottom_frame, text="❌ Отмена", command=settings_window.destroy).pack(side=tk.RIGHT, padx=5)
     
     def show_rule_editor(self, item=None, rules_tree=None):
         """Показать редактор правил"""
@@ -932,17 +674,14 @@ class FileScannerGUI:
         editor_window.grab_set()
         editor_window.resizable(True, True)
         
-        # Применяем тему
         if self.dark_theme:
             editor_window.configure(bg='#1e1e1e')
         
-        # Центрируем окно
         editor_window.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (500 // 2)
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (500 // 2)
-        editor_window.geometry(f"500x500+{x}+{y}")
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (600 // 2)
+        editor_window.geometry(f"500x600+{x}+{y}")
         
-        # Определяем режим - редактирование или создание
         is_edit = item is not None
         if is_edit:
             category = rules_tree.item(item)['values'][0].lower()
@@ -951,15 +690,12 @@ class FileScannerGUI:
             category = ""
             rule_data = {'patterns': [], 'tags': []}
         
-        # Заголовок
         title_text = "Редактирование правила" if is_edit else "Создание нового правила"
         ttk.Label(editor_window, text=title_text, font=('Arial', 14, 'bold')).pack(pady=10)
         
-        # Основная форма
         form_frame = ttk.Frame(editor_window)
         form_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
-        # Название категории
         name_frame = ttk.LabelFrame(form_frame, text="Название категории", padding="10")
         name_frame.pack(fill=tk.X, pady=5)
         
@@ -970,7 +706,6 @@ class FileScannerGUI:
         ttk.Label(name_frame, text="Например: my_projects, work_documents", 
                  font=('Arial', 8), foreground='gray').pack(anchor=tk.W, pady=(2, 0))
         
-        # Паттерны поиска
         patterns_frame = ttk.LabelFrame(form_frame, text="Паттерны поиска", padding="10")
         patterns_frame.pack(fill=tk.X, pady=5)
         
@@ -979,14 +714,12 @@ class FileScannerGUI:
         patterns_text = tk.Text(patterns_frame, height=6, wrap=tk.WORD)
         patterns_text.pack(fill=tk.X, pady=5)
         
-        # Заполняем существующие паттерны
         if rule_data['patterns']:
             patterns_text.insert('1.0', '\n'.join(rule_data['patterns']))
         
         ttk.Label(patterns_frame, text="Примеры: report, отчет, .pdf$, project_*", 
                  font=('Arial', 8), foreground='gray').pack(anchor=tk.W)
         
-        # Теги
         tags_frame = ttk.LabelFrame(form_frame, text="Теги (через запятую)", padding="10")
         tags_frame.pack(fill=tk.X, pady=5)
         
@@ -997,7 +730,6 @@ class FileScannerGUI:
         ttk.Label(tags_frame, text="Например: работа, документы, важное", 
                  font=('Arial', 8), foreground='gray').pack(anchor=tk.W, pady=(2, 0))
         
-        # Тестирование правила
         test_frame = ttk.LabelFrame(form_frame, text="Тестирование", padding="10")
         test_frame.pack(fill=tk.X, pady=5)
         
@@ -1034,7 +766,6 @@ class FileScannerGUI:
         test_result = tk.Text(test_frame, height=3, wrap=tk.WORD)
         test_result.pack(fill=tk.X, pady=(5, 0))
         
-        # Кнопки действий
         buttons_frame = ttk.Frame(editor_window)
         buttons_frame.pack(fill=tk.X, padx=20, pady=10)
         
@@ -1054,22 +785,18 @@ class FileScannerGUI:
                 messagebox.showwarning("Ошибка", "Добавьте хотя бы один тег!")
                 return
             
-            # Сохраняем правило
             self.ai_tag_patterns[category_name] = {
                 'patterns': patterns,
                 'tags': tags
             }
             
-            # Обновляем таблицу
             if rules_tree:
                 if is_edit:
-                    # Удаляем старую запись если название изменилось
                     old_category = rules_tree.item(item)['values'][0].lower()
                     if old_category != category_name and old_category in self.ai_tag_patterns:
                         del self.ai_tag_patterns[old_category]
                     rules_tree.delete(item)
                 
-                # Добавляем новую/обновленную запись
                 patterns_str = ', '.join(patterns[:3]) + ('...' if len(patterns) > 3 else '')
                 tags_str = ', '.join(tags)
                 rules_tree.insert('', 'end', values=(
@@ -1080,18 +807,218 @@ class FileScannerGUI:
                 ))
             
             messagebox.showinfo("Успех", f"Правило '{category_name}' сохранено!")
-            
-            # Автосохранение настроек
             self.save_settings()
-            
             editor_window.destroy()
         
         ttk.Button(buttons_frame, text="💾 Сохранить", command=save_rule).pack(side=tk.RIGHT, padx=5)
         ttk.Button(buttons_frame, text="❌ Отмена", command=editor_window.destroy).pack(side=tk.RIGHT, padx=5)
         
-        # Устанавливаем фокус на первое поле
         if not is_edit:
             category_entry.focus_set()
+    
+    def show_ai_settings(self):
+        """Показать настройки AI"""
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("⚙️ Настройки AI")
+        settings_window.geometry("600x500")
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        settings_window.resizable(True, True)
+        
+        if self.dark_theme:
+            settings_window.configure(bg='#1e1e1e')
+        
+        settings_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (600 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (500 // 2)
+        settings_window.geometry(f"600x500+{x}+{y}")
+        
+        notebook = ttk.Notebook(settings_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        local_frame = ttk.Frame(notebook)
+        notebook.add(local_frame, text="🤖 Локальные правила")
+        
+        ttk.Label(local_frame, text="Настройка локальных AI правил", 
+                 font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        local_settings_frame = ttk.LabelFrame(local_frame, text="Основные настройки", padding="10")
+        local_settings_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Checkbutton(local_settings_frame, text="Включить локальные AI теги", 
+                       variable=self.ai_enabled).pack(anchor=tk.W)
+        
+        rules_frame = ttk.Frame(local_frame)
+        rules_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        rules_columns = ('category', 'patterns', 'tags', 'enabled')
+        rules_tree = ttk.Treeview(rules_frame, columns=rules_columns, show='headings', height=8)
+        
+        rules_tree.heading('category', text='Категория')
+        rules_tree.heading('patterns', text='Паттерны')
+        rules_tree.heading('tags', text='Теги')
+        rules_tree.heading('enabled', text='Активно')
+        
+        rules_tree.column('category', width=100)
+        rules_tree.column('patterns', width=200)
+        rules_tree.column('tags', width=150)
+        rules_tree.column('enabled', width=80)
+        
+        for category, data in self.ai_tag_patterns.items():
+            patterns_str = ', '.join(data['patterns'][:3]) + ('...' if len(data['patterns']) > 3 else '')
+            tags_str = ', '.join(data['tags'])
+            rules_tree.insert('', 'end', values=(
+                category.title(),
+                patterns_str,
+                tags_str,
+                "✅"
+            ))
+        
+        rules_tree.pack(fill=tk.BOTH, expand=True)
+        
+        local_buttons_frame = ttk.Frame(local_frame)
+        local_buttons_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        def add_rule():
+            self.show_rule_editor(None, rules_tree)
+        
+        def edit_rule():
+            selected = rules_tree.selection()
+            if not selected:
+                messagebox.showwarning("Выбор", "Выберите правило для редактирования!")
+                return
+            self.show_rule_editor(selected[0], rules_tree)
+        
+        def delete_rule():
+            selected = rules_tree.selection()
+            if not selected:
+                messagebox.showwarning("Выбор", "Выберите правило для удаления!")
+                return
+            
+            if messagebox.askyesno("Удаление", "Удалить выбранное правило?"):
+                item = selected[0]
+                category = rules_tree.item(item)['values'][0].lower()
+                if category in self.ai_tag_patterns:
+                    del self.ai_tag_patterns[category]
+                rules_tree.delete(item)
+                self.save_settings()
+                messagebox.showinfo("Успех", "Правило удалено!")
+        
+        ttk.Button(local_buttons_frame, text="➕ Добавить правило", command=add_rule).pack(side=tk.LEFT, padx=5)
+        ttk.Button(local_buttons_frame, text="✏️ Редактировать", command=edit_rule).pack(side=tk.LEFT, padx=5)
+        ttk.Button(local_buttons_frame, text="🗑️ Удалить", command=delete_rule).pack(side=tk.LEFT, padx=5)
+        
+        openai_frame = ttk.Frame(notebook)
+        notebook.add(openai_frame, text="🧠 OpenAI")
+        
+        ttk.Label(openai_frame, text="Настройка OpenAI GPT", 
+                 font=('Arial', 14, 'bold')).pack(pady=20)
+        
+        openai_main_frame = ttk.LabelFrame(openai_frame, text="Основные настройки", padding="15")
+        openai_main_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Checkbutton(openai_main_frame, text="Включить OpenAI анализ", 
+                       variable=self.openai_enabled).pack(anchor=tk.W, pady=5)
+        
+        api_frame = ttk.Frame(openai_main_frame)
+        api_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(api_frame, text="🔑 API ключ:").pack(side=tk.LEFT)
+        ttk.Entry(api_frame, textvariable=self.openai_api_key, width=40, show="*").pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        
+        test_frame = ttk.LabelFrame(openai_frame, text="Тестирование", padding="15")
+        test_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        test_input_frame = ttk.Frame(test_frame)
+        test_input_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(test_input_frame, text="🧪 Тест файл:").pack(side=tk.LEFT)
+        test_entry = ttk.Entry(test_input_frame, width=30)
+        test_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        test_entry.insert(0, "presentation_Q4_2023.pptx")
+        
+        def test_ai():
+            filename = test_entry.get()
+            if not filename:
+                return
+            
+            test_result.delete(1.0, tk.END)
+            test_result.insert(tk.END, f"Анализ файла '{filename}'...\n\n")
+            settings_window.update()
+            
+            if self.openai_api_key.get():
+                fake_file_info = {
+                    'name': filename,
+                    'size_mb': 2.5,
+                    'extension': os.path.splitext(filename)[1] or '.unknown'
+                }
+                
+                ai_tags = self.generate_openai_tags(fake_file_info)
+                
+                if ai_tags:
+                    test_result.insert(tk.END, f"✅ OpenAI теги: {', '.join(ai_tags)}\n")
+                    test_result.insert(tk.END, f"⚡ Токенов: ~{self.tokens_used_today}\n")
+                    cost_today = self.tokens_used_today * 0.0015 / 1000
+                    test_result.insert(tk.END, f"💰 Стоимость: ~${cost_today:.4f}")
+                else:
+                    test_result.insert(tk.END, "❌ Ошибка получения тегов от OpenAI\nПроверьте API ключ и подключение")
+            else:
+                test_result.insert(tk.END, "❌ Введите API ключ для тестирования")
+        
+        ttk.Button(test_input_frame, text="🚀 Тестировать", command=test_ai).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        test_result = tk.Text(test_frame, height=4, wrap=tk.WORD)
+        test_result.pack(fill=tk.X, pady=5)
+        
+        advanced_frame = ttk.Frame(notebook)
+        notebook.add(advanced_frame, text="🔧 Продвинутые")
+        
+        ttk.Label(advanced_frame, text="Дополнительные настройки", 
+                 font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        mode_frame = ttk.LabelFrame(advanced_frame, text="Режим работы", padding="15")
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Radiobutton(mode_frame, text="🤖 Только локальные правила (быстро, бесплатно)", 
+                       variable=self.ai_mode, value="local").pack(anchor=tk.W, pady=3)
+        ttk.Radiobutton(mode_frame, text="🧠 Только OpenAI (медленно, точно)", 
+                       variable=self.ai_mode, value="openai").pack(anchor=tk.W, pady=3)
+        ttk.Radiobutton(mode_frame, text="⚡ Гибрид: локальные + AI для сложных файлов", 
+                       variable=self.ai_mode, value="hybrid").pack(anchor=tk.W, pady=3)
+        
+        ai_filters_frame = ttk.LabelFrame(advanced_frame, text="Когда использовать OpenAI", padding="15")
+        ai_filters_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Checkbutton(ai_filters_frame, text="Для неизвестных файлов", 
+                       variable=self.ai_for_unknown).pack(anchor=tk.W, pady=2)
+        ttk.Checkbutton(ai_filters_frame, text="Для документов (.pdf, .docx, .txt)", 
+                       variable=self.ai_for_documents).pack(anchor=tk.W, pady=2)
+        ttk.Checkbutton(ai_filters_frame, text="Для проектов и папок", 
+                       variable=self.ai_for_projects).pack(anchor=tk.W, pady=2)
+        
+        cache_frame = ttk.LabelFrame(advanced_frame, text="Кэширование", padding="15")
+        cache_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Checkbutton(cache_frame, text="Кэшировать результаты AI (экономия токенов)", 
+                       variable=self.enable_cache).pack(anchor=tk.W, pady=2)
+        
+        cache_info = ttk.Label(cache_frame, text="📁 Кэш: 0 файлов, 0 MB", font=('Arial', 9))
+        cache_info.pack(anchor=tk.W, pady=2)
+        
+        ttk.Button(cache_frame, text="🗑️ Очистить кэш").pack(anchor=tk.W, pady=5)
+        
+        bottom_frame = ttk.Frame(settings_window)
+        bottom_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        def save_settings():
+            if self.save_settings():
+                messagebox.showinfo("Настройки", "✅ Настройки AI сохранены!\n\nФайл: ai_settings.json")
+            else:
+                messagebox.showerror("Ошибка", "❌ Ошибка сохранения настроек!")
+            settings_window.destroy()
+        
+        ttk.Button(bottom_frame, text="💾 Сохранить", command=save_settings).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom_frame, text="❌ Отмена", command=settings_window.destroy).pack(side=tk.RIGHT, padx=5)
     
     def show_filter_dialog(self):
         """Показать диалог фильтрации"""
@@ -1105,11 +1032,9 @@ class FileScannerGUI:
         filter_window.transient(self.root)
         filter_window.grab_set()
         
-        # Применяем тему к диалогу
         if self.dark_theme:
             filter_window.configure(bg='#1e1e1e')
         
-        # Центрируем окно
         filter_window.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (400 // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (200 // 2)
@@ -1140,11 +1065,9 @@ class FileScannerGUI:
             
             ext_filter = ext_var.get().lower().strip()
             
-            # Очищаем текущие результаты
             for item in self.tree.get_children():
                 self.tree.delete(item)
             
-            # Применяем фильтры
             found_count = 0
             for file_info in self.files_data:
                 if file_info['size_mb'] >= min_size:
@@ -1178,14 +1101,6 @@ class FileScannerGUI:
         ttk.Button(buttons_frame, text="Сбросить", command=reset_filter).pack(side=tk.LEFT, padx=10)
         ttk.Button(buttons_frame, text="Отмена", command=filter_window.destroy).pack(side=tk.LEFT, padx=10)
     
-    def save_json(self):
-        """Быстрое сохранение в JSON"""
-        self.save_file_auto('json')
-    
-    def save_txt(self):
-        """Быстрое сохранение в TXT"""
-        self.save_file_auto('txt')
-    
     def save_file_auto(self, format_type):
         """Автоматическое сохранение рядом со скриптом"""
         if not self.files_data:
@@ -1193,28 +1108,21 @@ class FileScannerGUI:
             return
         
         try:
-            # Получаем директорию где находится скрипт
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            
-            # Получаем название сканированной папки
             scanned_folder = self.folder_var.get().strip()
             if scanned_folder:
                 folder_name = os.path.basename(scanned_folder)
-                if not folder_name:  # Если это корень диска
+                if not folder_name:
                     folder_name = scanned_folder.replace(':', '').replace('\\', '').replace('/', '')
             else:
                 folder_name = "Неизвестно"
             
-            # Создаем имя файла
             timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
             filename = f"{folder_name} - Анализ - {timestamp}.{format_type}"
-            
-            # Убираем недопустимые символы из имени файла
             filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
             
             file_path = os.path.join(script_dir, filename)
             
-            # Сохраняем файл
             if format_type == 'txt':
                 self.save_to_txt(file_path)
             elif format_type == 'csv':
@@ -1224,7 +1132,6 @@ class FileScannerGUI:
             
             messagebox.showinfo("Успех", f"Файл сохранен:\n{filename}\n\nПуть: {script_dir}")
             
-            # Предлагаем открыть папку с файлом
             if messagebox.askyesno("Открыть папку?", "Открыть папку с сохраненным файлом?"):
                 self.open_file_location(file_path)
             
@@ -1238,13 +1145,13 @@ class FileScannerGUI:
         """Открыть папку с файлом"""
         try:
             folder = os.path.dirname(file_path)
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 os.startfile(folder)
-            elif os.name == 'posix':  # macOS and Linux
+            elif os.name == 'posix':
                 import subprocess
-                if hasattr(os, 'uname') and os.uname().sysname == 'Darwin':  # macOS
+                if hasattr(os, 'uname') and os.uname().sysname == 'Darwin':
                     subprocess.run(['open', folder])
-                else:  # Linux
+                else:
                     subprocess.run(['xdg-open', folder])
         except Exception as e:
             print(f"Couldn't open folder: {e}")
@@ -1257,7 +1164,7 @@ class FileScannerGUI:
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Показать свойства", command=self.show_properties)
         
-        self.tree.bind("<Button-3>", self.show_context_menu)  # Правая кнопка мыши
+        self.tree.bind("<Button-3>", self.show_context_menu)
     
     def show_context_menu(self, event):
         """Показать контекстное меню"""
@@ -1269,7 +1176,7 @@ class FileScannerGUI:
         """Копировать путь к файлу"""
         item = self.tree.selection()[0] if self.tree.selection() else None
         if item:
-            path = self.tree.item(item)['values'][1]  # путь - второй элемент
+            path = self.tree.item(item)['values'][1]
             self.root.clipboard_clear()
             self.root.clipboard_append(path)
             messagebox.showinfo("Скопировано", f"Путь скопирован в буфер обмена:\n{path}")
@@ -1281,13 +1188,13 @@ class FileScannerGUI:
             path = self.tree.item(item)['values'][1]
             folder = os.path.dirname(path)
             try:
-                if os.name == 'nt':  # Windows
+                if os.name == 'nt':
                     os.startfile(folder)
-                elif os.name == 'posix':  # macOS and Linux
+                elif os.name == 'posix':
                     import subprocess
-                    if hasattr(os, 'uname') and os.uname().sysname == 'Darwin':  # macOS
+                    if hasattr(os, 'uname') and os.uname().sysname == 'Darwin':
                         subprocess.run(['open', folder])
-                    else:  # Linux
+                    else:
                         subprocess.run(['xdg-open', folder])
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось открыть папку: {e}")
@@ -1299,7 +1206,6 @@ class FileScannerGUI:
             values = self.tree.item(item)['values']
             name, path, size, ext, modified, tags = values
             
-            # Найти полную информацию о файле
             file_info = None
             for f in self.files_data:
                 if f['full_path'] == path:
@@ -1342,7 +1248,6 @@ class FileScannerGUI:
             messagebox.showinfo("Информация", "Сканирование уже выполняется!")
             return
         
-        # Запуск в отдельном потоке
         thread = threading.Thread(target=self.scan_files, args=(folder,))
         thread.daemon = True
         thread.start()
@@ -1358,7 +1263,6 @@ class FileScannerGUI:
         try:
             self.files_data = []
             
-            # Получение настроек
             include_hidden = self.include_hidden.get()
             extensions_text = self.extensions_var.get().strip()
             file_extensions = None
@@ -1366,7 +1270,6 @@ class FileScannerGUI:
             if extensions_text:
                 file_extensions = [ext.strip().lower() for ext in extensions_text.split() if ext.strip()]
             
-            # Первый проход - подсчет файлов для прогресса
             self.total_files_to_scan = 0
             for root, dirs, files in os.walk(directory):
                 if not include_hidden:
@@ -1382,14 +1285,11 @@ class FileScannerGUI:
                     
                     self.total_files_to_scan += 1
             
-            # Переключаемся на детерминированный прогресс
             self.progress.stop()
             self.progress.config(mode='determinate', maximum=self.total_files_to_scan)
             self.scan_progress = 0
             
-            # Второй проход - само сканирование
             for root, dirs, files in os.walk(directory):
-                # Исключаем скрытые папки, если нужно
                 if not include_hidden:
                     dirs[:] = [d for d in dirs if not d.startswith('.')]
                 
@@ -1400,7 +1300,6 @@ class FileScannerGUI:
                     file_path = os.path.join(root, file)
                     file_ext = os.path.splitext(file)[1].lower()
                     
-                    # Фильтруем по расширениям
                     if file_extensions and file_ext not in file_extensions:
                         continue
                     
@@ -1418,12 +1317,10 @@ class FileScannerGUI:
                             'created_date': datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
                         }
                         
-                        # Генерируем AI теги (локальные + OpenAI)
                         file_info['ai_tags'] = self.combine_ai_tags(file_info)
                         
                         self.files_data.append(file_info)
                         
-                        # Обновляем прогресс
                         self.scan_progress += 1
                         progress_percent = (self.scan_progress / self.total_files_to_scan) * 100
                         self.root.after(0, self.update_progress, self.scan_progress, progress_percent)
@@ -1431,7 +1328,6 @@ class FileScannerGUI:
                     except (PermissionError, OSError):
                         continue
             
-            # Обновление интерфейса в главном потоке
             self.root.after(0, self.update_results)
             
         except Exception as e:
@@ -1454,11 +1350,9 @@ class FileScannerGUI:
     
     def update_results(self):
         """Обновление результатов в интерфейсе"""
-        # Очистка предыдущих результатов
         for item in self.tree.get_children():
             self.tree.delete(item)
         
-        # Добавление новых результатов с цветовой индикацией
         for file_info in self.files_data:
             tags_str = ', '.join(file_info.get('ai_tags', []))
             item = self.tree.insert('', 'end', values=(
@@ -1470,15 +1364,13 @@ class FileScannerGUI:
                 tags_str
             ))
             
-            # Цветовая индикация по размеру
-            if file_info['size_mb'] > 100:  # Большие файлы - красный
+            if file_info['size_mb'] > 100:
                 self.tree.set(item, 'size', f"{file_info['size_mb']} 🔴")
-            elif file_info['size_mb'] > 10:  # Средние файлы - желтый
+            elif file_info['size_mb'] > 10:
                 self.tree.set(item, 'size', f"{file_info['size_mb']} 🟡")
-            else:  # Маленькие файлы - зеленый
+            else:
                 self.tree.set(item, 'size', f"{file_info['size_mb']} 🟢")
         
-        # Обновление статистики
         self.update_statistics()
     
     def update_statistics(self):
@@ -1491,13 +1383,11 @@ class FileScannerGUI:
         total_size_mb = sum(f['size_mb'] for f in self.files_data)
         total_size_gb = total_size_mb / 1024
         
-        # Статистика по расширениям
         extensions = {}
         for file_info in self.files_data:
             ext = file_info['extension']
             extensions[ext] = extensions.get(ext, 0) + 1
         
-        # Топ-5 расширений
         top_extensions = sorted(extensions.items(), key=lambda x: x[1], reverse=True)[:5]
         ext_text = ", ".join([f"{ext}: {count}" for ext, count in top_extensions])
         
@@ -1520,7 +1410,6 @@ class FileScannerGUI:
             total_size = sum(f['size_mb'] for f in self.files_data)
             f.write(f"💾 Общий размер: {total_size:.2f} MB ({total_size/1024:.2f} GB)\n\n")
             
-            # Статистика по расширениям
             extensions = {}
             for file_info in self.files_data:
                 ext = file_info['extension']
@@ -1547,14 +1436,12 @@ class FileScannerGUI:
             ])
             writer.writeheader()
             for file_info in self.files_data:
-                # Преобразуем теги в строку для CSV
                 file_info_copy = file_info.copy()
                 file_info_copy['ai_tags'] = ', '.join(file_info.get('ai_tags', []))
                 writer.writerow(file_info_copy)
     
     def save_to_json(self, filename):
         """Сохранение в JSON файл"""
-        # Статистика
         extensions = {}
         for file_info in self.files_data:
             ext = file_info['extension']
@@ -1582,14 +1469,10 @@ class FileScannerGUI:
     
     def clear_results(self):
         """Очистка результатов"""
-        # Очистка таблицы
         for item in self.tree.get_children():
             self.tree.delete(item)
         
-        # Очистка данных
         self.files_data = []
-        
-        # Сброс статистики и прогресса
         self.stats_var.set("Готов к сканированию")
         self.progress_var.set("Готов к сканированию")
         self.progress['value'] = 0
@@ -1601,7 +1484,7 @@ class FileScannerGUI:
         help_text = """
 🗂️ ФАЙЛ-СКАНЕР v1.0 - СПРАВКА
 
-✨ НОВЫЕ AI ВОЗМОЖНОСТИ:
+✨ AI ВОЗМОЖНОСТИ:
 • 🤖 Автоматическая генерация тегов
 • Умная категоризация файлов
 • Поиск по тегам и содержимому
@@ -1613,11 +1496,11 @@ class FileScannerGUI:
 • Фильтрация по расширениям и размеру
 • Поиск по именам файлов и AI тегам
 • Статистика по типам файлов
-• Экспорт в TXT и JSON с тегами
+• Экспорт в TXT, CSV и JSON с тегами
 
 🔧 КАК ИСПОЛЬЗОВАТЬ:
 1. Выберите папку для сканирования  
-2. Включите "🤖 AI теги" для умного анализа
+2. Настройте AI теги в F2
 3. Нажмите "Сканировать" (F5)
 4. Поиск работает и по именам, и по тегам
 5. Сохраните отчет с AI данными
@@ -1647,8 +1530,7 @@ Ctrl+F - Фильтрация
 Del - Очистить результаты
 
 💾 СОХРАНЕНИЕ:
-• JSON и TXT содержат AI теги
-• Готово для экспорта в Supabase
+• JSON, TXT и CSV содержат AI теги
 • Формат: "Папка - Анализ - дата.расширение"
 
 🎨 ТЕМЫ:
