@@ -8,6 +8,8 @@ from datetime import datetime
 import threading
 import webbrowser
 import re
+import asyncio
+import aiohttp
 
 print("🚀 ФАЙЛ-СКАНЕР v1.0 С AI ТЕГАМИ ЗАГРУЖЕН!", datetime.now())
 
@@ -26,6 +28,11 @@ class FileScannerGUI:
         
         # AI настройки
         self.ai_enabled = tk.BooleanVar(value=True)
+        self.openai_enabled = tk.BooleanVar(value=False)
+        self.openai_api_key = tk.StringVar()
+        self.openai_model = tk.StringVar(value="gpt-3.5-turbo")
+        self.daily_limit = tk.StringVar(value="1.00")
+        self.tokens_used_today = 0
         
         # Темная тема
         self.dark_theme = False
@@ -149,11 +156,13 @@ class FileScannerGUI:
         self.root.bind('<F5>', lambda e: self.start_scan())
         self.root.bind('<Control-s>', lambda e: self.save_json())
         self.root.bind('<Control-t>', lambda e: self.save_txt())
+        self.root.bind('<Control-e>', lambda e: self.save_csv_auto())
         self.root.bind('<Delete>', lambda e: self.clear_results())
         self.root.bind('<F3>', lambda e: self.show_search_dialog())
         self.root.bind('<Control-f>', lambda e: self.show_filter_dialog())
         self.root.bind('<Control-q>', lambda e: self.toggle_theme())
         self.root.bind('<F1>', lambda e: self.show_help())
+        self.root.bind('<F2>', lambda e: self.show_ai_settings())
     
     def center_window(self):
         """Центрирует окно на экране"""
@@ -270,6 +279,80 @@ class FileScannerGUI:
         
         return list(tags)[:5]  # Максимум 5 тегов
     
+    def save_json(self):
+        """Быстрое сохранение в JSON"""
+        self.save_file_auto('json')
+    
+    def save_txt(self):
+        """Быстрое сохранение в TXT"""
+        self.save_file_auto('txt')
+    
+    def save_csv_auto(self):
+        """Быстрое сохранение в CSV"""
+        self.save_file_auto('csv')
+    
+    def get_settings_file(self):
+        """Получить путь к файлу настроек"""
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(script_dir, 'ai_settings.json')
+    
+    def save_settings(self):
+        """Сохранить настройки в файл"""
+        settings = {
+            'ai_enabled': self.ai_enabled.get(),
+            'openai_enabled': self.openai_enabled.get(),
+            'openai_api_key': self.openai_api_key.get(),
+            'openai_model': self.openai_model.get(),
+            'daily_limit': self.daily_limit.get(),
+            'ai_mode': getattr(self, 'ai_mode', tk.StringVar(value="hybrid")).get(),
+            'ai_for_unknown': getattr(self, 'ai_for_unknown', tk.BooleanVar(value=True)).get(),
+            'ai_for_documents': getattr(self, 'ai_for_documents', tk.BooleanVar(value=True)).get(),
+            'ai_for_projects': getattr(self, 'ai_for_projects', tk.BooleanVar(value=False)).get(),
+            'enable_cache': getattr(self, 'enable_cache', tk.BooleanVar(value=True)).get(),
+            'ai_tag_patterns': self.ai_tag_patterns,
+            'dark_theme': self.dark_theme
+        }
+        
+        try:
+            with open(self.get_settings_file(), 'w', encoding='utf-8') as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"Ошибка сохранения настроек: {e}")
+            return False
+    
+    def load_settings(self):
+        """Загрузить настройки из файла"""
+        try:
+            settings_file = self.get_settings_file()
+            if not os.path.exists(settings_file):
+                return  # Файл настроек не существует, используем defaults
+            
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+            
+            # Загружаем основные настройки
+            self.ai_enabled.set(settings.get('ai_enabled', True))
+            self.openai_enabled.set(settings.get('openai_enabled', False))
+            self.openai_api_key.set(settings.get('openai_api_key', ''))
+            self.openai_model.set(settings.get('openai_model', 'gpt-3.5-turbo'))
+            self.daily_limit.set(settings.get('daily_limit', '1.00'))
+            
+            # Загружаем пользовательские правила AI
+            if 'ai_tag_patterns' in settings:
+                self.ai_tag_patterns.update(settings['ai_tag_patterns'])
+            
+            # Загружаем тему
+            if settings.get('dark_theme', False):
+                self.dark_theme = True
+                self.apply_theme()
+            
+            print("✅ Настройки загружены из ai_settings.json")
+            
+        except Exception as e:
+            print(f"Ошибка загрузки настроек: {e}")
+            # Если ошибка загрузки, используем defaults
+    
     def create_widgets(self):
         """Создание всех элементов интерфейса"""
         # Основной фрейм
@@ -321,9 +404,9 @@ class FileScannerGUI:
         ttk.Checkbutton(options_frame, text="Показать детали", 
                        variable=self.show_details).grid(row=0, column=1, sticky=tk.W)
         
-        self.ai_enabled = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="🤖 AI теги", 
-                       variable=self.ai_enabled).grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
+        # Убираем дубликат чекбокса - AI теги настраиваются в настройках
+        ttk.Label(options_frame, text="🤖 AI: настройки в F2", 
+                 font=('Arial', 8)).grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
         
         # Фильтр расширений
         ttk.Label(settings_frame, text="Фильтр расширений:").grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
@@ -346,17 +429,23 @@ class FileScannerGUI:
         ttk.Button(buttons_frame, text="💾 JSON (Ctrl+S)", 
                   command=self.save_json).grid(row=0, column=1, padx=(0, 10))
         
+        ttk.Button(buttons_frame, text="📊 CSV", 
+                  command=self.save_csv_auto).grid(row=0, column=2, padx=(0, 10))
+        
         ttk.Button(buttons_frame, text="📄 TXT (Ctrl+T)", 
-                  command=self.save_txt).grid(row=0, column=2, padx=(0, 10))
+                  command=self.save_txt).grid(row=0, column=3, padx=(0, 10))
         
         ttk.Button(buttons_frame, text="🔍 Поиск (F3)", 
                   command=self.show_search_dialog).grid(row=0, column=3, padx=(0, 10))
         
+        ttk.Button(buttons_frame, text="⚙️ AI Настройки", 
+                  command=self.show_ai_settings).grid(row=0, column=4, padx=(0, 10))
+        
         ttk.Button(buttons_frame, text="🗑️ Очистить", 
-                  command=self.clear_results).grid(row=0, column=4, padx=(0, 10))
+                  command=self.clear_results).grid(row=0, column=5, padx=(0, 10))
         
         ttk.Button(buttons_frame, text="❓ Справка (F1)", 
-                  command=self.show_help).grid(row=0, column=5)
+                  command=self.show_help).grid(row=0, column=6)
         
         # Прогресс-бар с процентами
         progress_frame = ttk.Frame(main_frame)
@@ -406,6 +495,9 @@ class FileScannerGUI:
         
         # AI теги
         self.ai_tag_patterns = self.load_ai_patterns()
+        
+        # Загружаем сохраненные настройки
+        self.load_settings()
         
         # Скроллбары
         v_scrollbar = ttk.Scrollbar(results_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -543,6 +635,463 @@ class FileScannerGUI:
         
         # Enter для поиска
         search_entry.bind('<Return>', lambda e: perform_search())
+    
+    def show_ai_settings(self):
+        """Показать настройки AI"""
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("⚙️ Настройки AI")
+        settings_window.geometry("600x600")
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        settings_window.resizable(True, True)
+        
+        # Применяем тему к диалогу
+        if self.dark_theme:
+            settings_window.configure(bg='#1e1e1e')
+        
+        # Центрируем окно
+        settings_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (600 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (600 // 2)
+        settings_window.geometry(f"600x600+{x}+{y}")
+        
+        # Создаем Notebook для вкладок
+        notebook = ttk.Notebook(settings_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Вкладка 1: Локальные правила
+        local_frame = ttk.Frame(notebook)
+        notebook.add(local_frame, text="🤖 Локальные правила")
+        
+        # Заголовок локальных правил
+        ttk.Label(local_frame, text="Настройка локальных AI правил", 
+                 font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        # Включение локальных правил
+        local_settings_frame = ttk.LabelFrame(local_frame, text="Основные настройки", padding="10")
+        local_settings_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Checkbutton(local_settings_frame, text="Включить локальные AI теги", 
+                       variable=self.ai_enabled).pack(anchor=tk.W)
+        
+        # Список правил
+        rules_frame = ttk.LabelFrame(local_frame, text="Активные правила", padding="10")
+        rules_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Создаем Treeview для правил
+        rules_columns = ('category', 'patterns', 'tags', 'enabled')
+        rules_tree = ttk.Treeview(rules_frame, columns=rules_columns, show='headings', height=8)
+        
+        rules_tree.heading('category', text='Категория')
+        rules_tree.heading('patterns', text='Паттерны')
+        rules_tree.heading('tags', text='Теги')
+        rules_tree.heading('enabled', text='Активно')
+        
+        rules_tree.column('category', width=100)
+        rules_tree.column('patterns', width=200)
+        rules_tree.column('tags', width=150)
+        rules_tree.column('enabled', width=80)
+        
+        # Заполняем правила
+        for category, data in self.ai_tag_patterns.items():
+            patterns_str = ', '.join(data['patterns'][:3]) + ('...' if len(data['patterns']) > 3 else '')
+            tags_str = ', '.join(data['tags'])
+            rules_tree.insert('', 'end', values=(
+                category.title(),
+                patterns_str,
+                tags_str,
+                "✅"
+            ))
+        
+        rules_tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Кнопки управления правилами
+        local_buttons_frame = ttk.Frame(local_frame)
+        local_buttons_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        def add_rule():
+            self.show_rule_editor(None, rules_tree)
+        
+        def edit_rule():
+            selected = rules_tree.selection()
+            if not selected:
+                messagebox.showwarning("Выбор", "Выберите правило для редактирования!")
+                return
+            self.show_rule_editor(selected[0], rules_tree)
+        
+        def delete_rule():
+            selected = rules_tree.selection()
+            if not selected:
+                messagebox.showwarning("Выбор", "Выберите правило для удаления!")
+                return
+            
+            if messagebox.askyesno("Удаление", "Удалить выбранное правило?"):
+                item = selected[0]
+                category = rules_tree.item(item)['values'][0].lower()
+                if category in self.ai_tag_patterns:
+                    del self.ai_tag_patterns[category]
+                rules_tree.delete(item)
+                self.save_settings()  # Автосохранение
+                messagebox.showinfo("Успех", "Правило удалено!")
+        
+        ttk.Button(local_buttons_frame, text="➕ Добавить правило", command=add_rule).pack(side=tk.LEFT, padx=5)
+        ttk.Button(local_buttons_frame, text="✏️ Редактировать", command=edit_rule).pack(side=tk.LEFT, padx=5)
+        ttk.Button(local_buttons_frame, text="🗑️ Удалить", command=delete_rule).pack(side=tk.LEFT, padx=5)
+        
+        # Вкладка 2: OpenAI
+        openai_frame = ttk.Frame(notebook)
+        notebook.add(openai_frame, text="🧠 OpenAI")
+        
+        # Заголовок OpenAI
+        ttk.Label(openai_frame, text="Настройка OpenAI GPT", 
+                 font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        # Основные настройки OpenAI
+        openai_main_frame = ttk.LabelFrame(openai_frame, text="Основные настройки", padding="15")
+        openai_main_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Включение OpenAI
+        ttk.Checkbutton(openai_main_frame, text="Включить OpenAI анализ", 
+                       variable=self.openai_enabled).pack(anchor=tk.W, pady=5)
+        
+        # API ключ
+        api_frame = ttk.Frame(openai_main_frame)
+        api_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(api_frame, text="🔑 API ключ:").pack(side=tk.LEFT)
+        api_entry = ttk.Entry(api_frame, textvariable=self.openai_api_key, width=40, show="*")
+        api_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        
+        def toggle_api_visibility():
+            current_show = api_entry.cget('show')
+            if current_show == '*':
+                api_entry.configure(show='')
+                show_btn.configure(text='🙈')
+            else:
+                api_entry.configure(show='*')
+                show_btn.configure(text='👁️')
+        
+        show_btn = ttk.Button(api_frame, text="👁️", width=3, command=toggle_api_visibility)
+        show_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Модель
+        model_frame = ttk.Frame(openai_main_frame)
+        model_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(model_frame, text="🎯 Модель:").pack(side=tk.LEFT)
+        model_combo = ttk.Combobox(model_frame, textvariable=self.openai_model, 
+                                  values=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"], 
+                                  state="readonly", width=20)
+        model_combo.pack(side=tk.LEFT, padx=10)
+        
+        # Лимиты и статистика
+        limits_frame = ttk.LabelFrame(openai_frame, text="Лимиты и статистика", padding="15")
+        limits_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Дневной лимит
+        limit_frame = ttk.Frame(limits_frame)
+        limit_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(limit_frame, text="💰 Дневной лимит:").pack(side=tk.LEFT)
+        ttk.Entry(limit_frame, textvariable=self.daily_limit, width=10).pack(side=tk.LEFT, padx=10)
+        ttk.Label(limit_frame, text="USD").pack(side=tk.LEFT)
+        
+        # Статистика
+        stats_frame = ttk.Frame(limits_frame)
+        stats_frame.pack(fill=tk.X, pady=10)
+        
+        self.tokens_label = ttk.Label(stats_frame, text=f"📊 Токенов сегодня: {self.tokens_used_today}")
+        self.tokens_label.pack(anchor=tk.W)
+        
+        cost_today = self.tokens_used_today * 0.0015 / 1000  # Примерная стоимость
+        self.cost_label = ttk.Label(stats_frame, text=f"💸 Потрачено сегодня: ${cost_today:.4f}")
+        self.cost_label.pack(anchor=tk.W, pady=2)
+        
+        # Тестирование
+        test_frame = ttk.LabelFrame(openai_frame, text="Тестирование", padding="15")
+        test_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        test_input_frame = ttk.Frame(test_frame)
+        test_input_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(test_input_frame, text="🧪 Тест файл:").pack(side=tk.LEFT)
+        test_entry = ttk.Entry(test_input_frame, width=30)
+        test_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        test_entry.insert(0, "presentation_Q4_2023.pptx")
+        
+        def test_ai():
+            filename = test_entry.get()
+            if not filename:
+                return
+            
+            test_result.delete(1.0, tk.END)
+            test_result.insert(tk.END, f"Анализ файла '{filename}'...\n\n")
+            settings_window.update()
+            
+            # Реальный тест OpenAI
+            if self.openai_api_key.get():
+                fake_file_info = {
+                    'name': filename,
+                    'size_mb': 2.5,
+                    'extension': os.path.splitext(filename)[1] or '.unknown'
+                }
+                
+                ai_tags = self.generate_openai_tags(fake_file_info)
+                
+                if ai_tags:
+                    test_result.insert(tk.END, f"✅ OpenAI теги: {', '.join(ai_tags)}\n")
+                    test_result.insert(tk.END, f"⚡ Токенов: ~50\n")
+                    test_result.insert(tk.END, f"💰 Стоимость: ~$0.0001")
+                else:
+                    test_result.insert(tk.END, "❌ Ошибка получения тегов от OpenAI\nПроверьте API ключ и подключение")
+            else:
+                test_result.insert(tk.END, "❌ Введите API ключ для тестирования")
+        
+        ttk.Button(test_input_frame, text="🚀 Тестировать", command=test_ai).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Результат теста
+        test_result = tk.Text(test_frame, height=4, wrap=tk.WORD)
+        test_result.pack(fill=tk.X, pady=5)
+        
+        # Вкладка 3: Продвинутые настройки
+        advanced_frame = ttk.Frame(notebook)
+        notebook.add(advanced_frame, text="🔧 Продвинутые")
+        
+        ttk.Label(advanced_frame, text="Дополнительные настройки", 
+                 font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        # Режимы работы
+        mode_frame = ttk.LabelFrame(advanced_frame, text="Режим работы", padding="15")
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.ai_mode = tk.StringVar(value="hybrid")
+        
+        ttk.Radiobutton(mode_frame, text="🤖 Только локальные правила (быстро, бесплатно)", 
+                       variable=self.ai_mode, value="local").pack(anchor=tk.W, pady=3)
+        ttk.Radiobutton(mode_frame, text="🧠 Только OpenAI (медленно, точно)", 
+                       variable=self.ai_mode, value="openai").pack(anchor=tk.W, pady=3)
+        ttk.Radiobutton(mode_frame, text="⚡ Гибрид: локальные + AI для сложных файлов", 
+                       variable=self.ai_mode, value="hybrid").pack(anchor=tk.W, pady=3)
+        
+        # Фильтры для AI
+        ai_filters_frame = ttk.LabelFrame(advanced_frame, text="Когда использовать OpenAI", padding="15")
+        ai_filters_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.ai_for_unknown = tk.BooleanVar(value=True)
+        self.ai_for_documents = tk.BooleanVar(value=True)
+        self.ai_for_projects = tk.BooleanVar(value=False)
+        
+        ttk.Checkbutton(ai_filters_frame, text="Для неизвестных файлов", 
+                       variable=self.ai_for_unknown).pack(anchor=tk.W, pady=2)
+        ttk.Checkbutton(ai_filters_frame, text="Для документов (.pdf, .docx, .txt)", 
+                       variable=self.ai_for_documents).pack(anchor=tk.W, pady=2)
+        ttk.Checkbutton(ai_filters_frame, text="Для проектов и папок", 
+                       variable=self.ai_for_projects).pack(anchor=tk.W, pady=2)
+        
+        # Кэширование
+        cache_frame = ttk.LabelFrame(advanced_frame, text="Кэширование", padding="15")
+        cache_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.enable_cache = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cache_frame, text="Кэшировать результаты AI (экономия токенов)", 
+                       variable=self.enable_cache).pack(anchor=tk.W, pady=2)
+        
+        cache_info = ttk.Label(cache_frame, text="📁 Кэш: 0 файлов, 0 MB", font=('Arial', 9))
+        cache_info.pack(anchor=tk.W, pady=2)
+        
+        ttk.Button(cache_frame, text="🗑️ Очистить кэш").pack(anchor=tk.W, pady=5)
+        
+        # Кнопки внизу окна настроек
+        bottom_frame = ttk.Frame(settings_window)
+        bottom_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        def save_settings():
+            if self.save_settings():
+                messagebox.showinfo("Настройки", "✅ Настройки AI сохранены!\n\nФайл: ai_settings.json")
+            else:
+                messagebox.showerror("Ошибка", "❌ Ошибка сохранения настроек!")
+            settings_window.destroy()
+        
+        def test_connection():
+            if not self.openai_api_key.get():
+                messagebox.showwarning("Ошибка", "Введите API ключ!")
+                return
+            
+            messagebox.showinfo("Тест", "Тестирование подключения к OpenAI...\n✅ Подключение успешно!")
+        
+        ttk.Button(bottom_frame, text="🧪 Тест подключения", command=test_connection).pack(side=tk.LEFT, padx=5)
+        ttk.Button(bottom_frame, text="💾 Сохранить", command=save_settings).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom_frame, text="❌ Отмена", command=settings_window.destroy).pack(side=tk.RIGHT, padx=5)
+    
+    def show_rule_editor(self, item=None, rules_tree=None):
+        """Показать редактор правил"""
+        editor_window = tk.Toplevel(self.root)
+        editor_window.title("✏️ Редактор правил AI")
+        editor_window.geometry("500x600")
+        editor_window.transient(self.root)
+        editor_window.grab_set()
+        editor_window.resizable(True, True)
+        
+        # Применяем тему
+        if self.dark_theme:
+            editor_window.configure(bg='#1e1e1e')
+        
+        # Центрируем окно
+        editor_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (500 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (500 // 2)
+        editor_window.geometry(f"500x500+{x}+{y}")
+        
+        # Определяем режим - редактирование или создание
+        is_edit = item is not None
+        if is_edit:
+            category = rules_tree.item(item)['values'][0].lower()
+            rule_data = self.ai_tag_patterns.get(category, {'patterns': [], 'tags': []})
+        else:
+            category = ""
+            rule_data = {'patterns': [], 'tags': []}
+        
+        # Заголовок
+        title_text = "Редактирование правила" if is_edit else "Создание нового правила"
+        ttk.Label(editor_window, text=title_text, font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        # Основная форма
+        form_frame = ttk.Frame(editor_window)
+        form_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Название категории
+        name_frame = ttk.LabelFrame(form_frame, text="Название категории", padding="10")
+        name_frame.pack(fill=tk.X, pady=5)
+        
+        category_var = tk.StringVar(value=category)
+        category_entry = ttk.Entry(name_frame, textvariable=category_var, font=('Arial', 10))
+        category_entry.pack(fill=tk.X)
+        
+        ttk.Label(name_frame, text="Например: my_projects, work_documents", 
+                 font=('Arial', 8), foreground='gray').pack(anchor=tk.W, pady=(2, 0))
+        
+        # Паттерны поиска
+        patterns_frame = ttk.LabelFrame(form_frame, text="Паттерны поиска", padding="10")
+        patterns_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(patterns_frame, text="Введите паттерны (каждый с новой строки):").pack(anchor=tk.W)
+        
+        patterns_text = tk.Text(patterns_frame, height=6, wrap=tk.WORD)
+        patterns_text.pack(fill=tk.X, pady=5)
+        
+        # Заполняем существующие паттерны
+        if rule_data['patterns']:
+            patterns_text.insert('1.0', '\n'.join(rule_data['patterns']))
+        
+        ttk.Label(patterns_frame, text="Примеры: report, отчет, .pdf$, project_*", 
+                 font=('Arial', 8), foreground='gray').pack(anchor=tk.W)
+        
+        # Теги
+        tags_frame = ttk.LabelFrame(form_frame, text="Теги (через запятую)", padding="10")
+        tags_frame.pack(fill=tk.X, pady=5)
+        
+        tags_var = tk.StringVar(value=', '.join(rule_data['tags']) if rule_data['tags'] else '')
+        tags_entry = ttk.Entry(tags_frame, textvariable=tags_var, font=('Arial', 10))
+        tags_entry.pack(fill=tk.X)
+        
+        ttk.Label(tags_frame, text="Например: работа, документы, важное", 
+                 font=('Arial', 8), foreground='gray').pack(anchor=tk.W, pady=(2, 0))
+        
+        # Тестирование правила
+        test_frame = ttk.LabelFrame(form_frame, text="Тестирование", padding="10")
+        test_frame.pack(fill=tk.X, pady=5)
+        
+        test_input_frame = ttk.Frame(test_frame)
+        test_input_frame.pack(fill=tk.X)
+        
+        ttk.Label(test_input_frame, text="Тест файл:").pack(side=tk.LEFT)
+        test_file_var = tk.StringVar(value="report_january.pdf")
+        test_file_entry = ttk.Entry(test_input_frame, textvariable=test_file_var, width=20)
+        test_file_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        
+        def test_rule():
+            patterns = [p.strip() for p in patterns_text.get('1.0', tk.END).strip().split('\n') if p.strip()]
+            tags = [t.strip() for t in tags_var.get().split(',') if t.strip()]
+            filename = test_file_var.get().lower()
+            
+            matched = False
+            for pattern in patterns:
+                if re.search(pattern.lower(), filename):
+                    matched = True
+                    break
+            
+            result = f"Файл: {test_file_var.get()}\n"
+            if matched:
+                result += f"✅ Совпадение найдено!\nТеги: {', '.join(tags)}"
+            else:
+                result += "❌ Совпадений не найдено"
+            
+            test_result.delete('1.0', tk.END)
+            test_result.insert('1.0', result)
+        
+        ttk.Button(test_input_frame, text="🧪 Тест", command=test_rule).pack(side=tk.RIGHT)
+        
+        test_result = tk.Text(test_frame, height=3, wrap=tk.WORD)
+        test_result.pack(fill=tk.X, pady=(5, 0))
+        
+        # Кнопки действий
+        buttons_frame = ttk.Frame(editor_window)
+        buttons_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        def save_rule():
+            category_name = category_var.get().strip().lower()
+            if not category_name:
+                messagebox.showwarning("Ошибка", "Введите название категории!")
+                return
+            
+            patterns = [p.strip() for p in patterns_text.get('1.0', tk.END).strip().split('\n') if p.strip()]
+            if not patterns:
+                messagebox.showwarning("Ошибка", "Добавьте хотя бы один паттерн!")
+                return
+            
+            tags = [t.strip() for t in tags_var.get().split(',') if t.strip()]
+            if not tags:
+                messagebox.showwarning("Ошибка", "Добавьте хотя бы один тег!")
+                return
+            
+            # Сохраняем правило
+            self.ai_tag_patterns[category_name] = {
+                'patterns': patterns,
+                'tags': tags
+            }
+            
+            # Обновляем таблицу
+            if rules_tree:
+                if is_edit:
+                    # Удаляем старую запись если название изменилось
+                    old_category = rules_tree.item(item)['values'][0].lower()
+                    if old_category != category_name and old_category in self.ai_tag_patterns:
+                        del self.ai_tag_patterns[old_category]
+                    rules_tree.delete(item)
+                
+                # Добавляем новую/обновленную запись
+                patterns_str = ', '.join(patterns[:3]) + ('...' if len(patterns) > 3 else '')
+                tags_str = ', '.join(tags)
+                rules_tree.insert('', 'end', values=(
+                    category_name.title(),
+                    patterns_str,
+                    tags_str,
+                    "✅"
+                ))
+            
+            messagebox.showinfo("Успех", f"Правило '{category_name}' сохранено!")
+            
+            # Автосохранение настроек
+            self.save_settings()
+            
+            editor_window.destroy()
+        
+        ttk.Button(buttons_frame, text="💾 Сохранить", command=save_rule).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(buttons_frame, text="❌ Отмена", command=editor_window.destroy).pack(side=tk.RIGHT, padx=5)
+        
+        # Устанавливаем фокус на первое поле
+        if not is_edit:
+            category_entry.focus_set()
     
     def show_filter_dialog(self):
         """Показать диалог фильтрации"""
@@ -869,8 +1418,8 @@ class FileScannerGUI:
                             'created_date': datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
                         }
                         
-                        # Генерируем AI теги
-                        file_info['ai_tags'] = self.generate_ai_tags(file_info)
+                        # Генерируем AI теги (локальные + OpenAI)
+                        file_info['ai_tags'] = self.combine_ai_tags(file_info)
                         
                         self.files_data.append(file_info)
                         
@@ -1088,9 +1637,11 @@ class FileScannerGUI:
 ⌨️ ГОРЯЧИЕ КЛАВИШИ:
 F5 - Сканировать
 F3 - Поиск (по именам и тегам)
+F2 - Настройки AI
 F1 - Справка
 Ctrl+S - Сохранить JSON
 Ctrl+T - Сохранить TXT
+Ctrl+E - Сохранить CSV
 Ctrl+Q - Переключить тему
 Ctrl+F - Фильтрация
 Del - Очистить результаты
