@@ -7,8 +7,9 @@ from pathlib import Path
 from datetime import datetime
 import threading
 import webbrowser
+import re
 
-print("🚀 ФАЙЛ-СКАНЕР v1.0 ЗАГРУЖЕН!", datetime.now())
+print("🚀 ФАЙЛ-СКАНЕР v1.0 С AI ТЕГАМИ ЗАГРУЖЕН!", datetime.now())
 
 class FileScannerGUI:
     def __init__(self, root):
@@ -22,6 +23,9 @@ class FileScannerGUI:
         self.scanning = False
         self.scan_progress = 0
         self.total_files_to_scan = 0
+        
+        # AI настройки
+        self.ai_enabled = tk.BooleanVar(value=True)
         
         # Темная тема
         self.dark_theme = False
@@ -39,17 +43,15 @@ class FileScannerGUI:
         self.center_window()
     
     def setup_styles(self):
-        """Настройка стилей для красивого интерфейса"""
+        """Настройка стилей"""
         self.style = ttk.Style()
         
-        # Используем современную тему
         available_themes = self.style.theme_names()
         if 'clam' in available_themes:
             self.style.theme_use('clam')
         elif 'alt' in available_themes:
             self.style.theme_use('alt')
         
-        # Настройка цветов для светлой темы
         self.apply_theme()
     
     def apply_theme(self):
@@ -160,6 +162,114 @@ class FileScannerGUI:
         y = (self.root.winfo_screenheight() // 2) - (700 // 2)
         self.root.geometry(f"900x700+{x}+{y}")
     
+    def load_ai_patterns(self):
+        """Загрузить паттерны для AI тегирования"""
+        return {
+            # Работа и документы
+            'work': {
+                'patterns': ['отчет', 'report', 'договор', 'contract', 'презентация', 'presentation', 
+                           'meeting', 'совещание', 'budget', 'бюджет', 'план', 'plan', 'invoice', 'счет'],
+                'tags': ['работа', 'документы', 'офис']
+            },
+            # Программирование
+            'coding': {
+                'patterns': [r'\.py$', r'\.js$', r'\.html$', r'\.css$', r'\.cpp$', r'\.java$', 'src', 'code', 
+                           'project', 'проект', 'git', 'repo', 'api', 'app'],
+                'tags': ['код', 'программирование', 'разработка']
+            },
+            # Медиа
+            'media': {
+                'patterns': [r'\.mp4$', r'\.avi$', r'\.jpg$', r'\.png$', r'\.mp3$', 'photo', 'video', 
+                           'фото', 'видео', 'music', 'музыка', 'movie', 'фильм'],
+                'tags': ['медиа', 'развлечения', 'контент']
+            },
+            # Личное
+            'personal': {
+                'patterns': ['vacation', 'отпуск', 'family', 'семья', 'birthday', 'день_рождения',
+                           'personal', 'личное', 'diary', 'дневник', 'home', 'дом'],
+                'tags': ['личное', 'семья', 'быт']
+            },
+            # Учеба
+            'education': {
+                'patterns': ['study', 'учеба', 'homework', 'домашка', 'exam', 'экзамен', 'course', 
+                           'курс', 'lecture', 'лекция', 'university', 'университет', 'school'],
+                'tags': ['учеба', 'образование', 'знания']
+            },
+            # Игры
+            'games': {
+                'patterns': ['game', 'игра', 'steam', r'\.exe$', 'mod', 'мод', 'save', 'сохранение',
+                           'minecraft', 'gta', 'cs', 'wow'],
+                'tags': ['игры', 'развлечения', 'досуг']
+            },
+            # Архивы и бэкапы
+            'archive': {
+                'patterns': [r'\.zip$', r'\.rar$', r'\.7z$', 'backup', 'бэкап', 'archive', 'архив',
+                           'old', 'старый', 'copy', 'копия'],
+                'tags': ['архив', 'бэкап', 'хранение']
+            },
+            # Временные файлы
+            'temp': {
+                'patterns': ['temp', 'tmp', 'cache', 'кэш', r'\.log$', r'\.tmp$', r'~\$', 
+                           'новый документ', 'new document', 'untitled'],
+                'tags': ['временные', 'мусор', 'удалить']
+            }
+        }
+    
+    def generate_ai_tags(self, file_info):
+        """Генерация AI тегов для файла"""
+        if not self.ai_enabled.get():
+            return []
+        
+        filename = file_info['name'].lower()
+        filepath = file_info['full_path'].lower()
+        extension = file_info['extension'].lower()
+        
+        tags = set()
+        
+        # Анализ по паттернам
+        for category, data in self.ai_tag_patterns.items():
+            for pattern in data['patterns']:
+                if re.search(pattern, filename) or re.search(pattern, filepath):
+                    tags.update(data['tags'])
+                    break
+        
+        # Анализ по размеру
+        size_mb = file_info['size_mb']
+        if size_mb > 1000:
+            tags.add('большой')
+        elif size_mb > 100:
+            tags.add('средний')
+        else:
+            tags.add('маленький')
+        
+        # Анализ по дате
+        try:
+            modified_date = datetime.strptime(file_info['modified_date'], '%Y-%m-%d %H:%M:%S')
+            days_old = (datetime.now() - modified_date).days
+            
+            if days_old < 7:
+                tags.add('новый')
+            elif days_old < 30:
+                tags.add('недавний')
+            elif days_old > 365:
+                tags.add('старый')
+        except:
+            pass
+        
+        # Анализ по расширению
+        if extension in ['.exe', '.msi', '.dmg']:
+            tags.add('приложение')
+        elif extension in ['.txt', '.doc', '.docx', '.pdf']:
+            tags.add('документ')
+        elif extension in ['.jpg', '.png', '.gif', '.bmp']:
+            tags.add('изображение')
+        elif extension in ['.mp3', '.wav', '.flac']:
+            tags.add('аудио')
+        elif extension in ['.mp4', '.avi', '.mkv']:
+            tags.add('видео')
+        
+        return list(tags)[:5]  # Максимум 5 тегов
+    
     def create_widgets(self):
         """Создание всех элементов интерфейса"""
         # Основной фрейм
@@ -176,7 +286,7 @@ class FileScannerGUI:
         header_frame = ttk.Frame(main_frame)
         header_frame.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
-        title_label = ttk.Label(header_frame, text="🗂️ Файл-Сканер v1.0", font=('Arial', 16, 'bold'))
+        title_label = ttk.Label(header_frame, text="🗂️ Файл-Сканер v1.0 с AI", font=('Arial', 16, 'bold'))
         title_label.pack(side=tk.LEFT)
         
         theme_button = ttk.Button(header_frame, text="🌙", command=self.toggle_theme, width=3)
@@ -210,6 +320,10 @@ class FileScannerGUI:
         self.show_details = tk.BooleanVar(value=True)
         ttk.Checkbutton(options_frame, text="Показать детали", 
                        variable=self.show_details).grid(row=0, column=1, sticky=tk.W)
+        
+        self.ai_enabled = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="🤖 AI теги", 
+                       variable=self.ai_enabled).grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
         
         # Фильтр расширений
         ttk.Label(settings_frame, text="Фильтр расширений:").grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
@@ -268,7 +382,7 @@ class FileScannerGUI:
         stats_label.grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
         
         # Таблица результатов с сортировкой
-        columns = ('name', 'path', 'size', 'extension', 'modified')
+        columns = ('name', 'path', 'size', 'extension', 'modified', 'tags')
         self.tree = ttk.Treeview(results_frame, columns=columns, show='headings', height=15)
         
         # Настройка колонок с сортировкой
@@ -277,16 +391,21 @@ class FileScannerGUI:
         self.tree.heading('size', text='Размер (MB) ▲▼', command=lambda: self.sort_column('size'))
         self.tree.heading('extension', text='Расширение ▲▼', command=lambda: self.sort_column('extension'))
         self.tree.heading('modified', text='Изменен ▲▼', command=lambda: self.sort_column('modified'))
+        self.tree.heading('tags', text='🤖 AI Теги ▲▼', command=lambda: self.sort_column('tags'))
         
-        self.tree.column('name', width=200)
-        self.tree.column('path', width=300)
-        self.tree.column('size', width=100)
-        self.tree.column('extension', width=100)
-        self.tree.column('modified', width=150)
+        self.tree.column('name', width=150)
+        self.tree.column('path', width=250)
+        self.tree.column('size', width=80)
+        self.tree.column('extension', width=80)
+        self.tree.column('modified', width=120)
+        self.tree.column('tags', width=200)
         
         # Переменные для сортировки
         self.sort_column_name = None
         self.sort_reverse = False
+        
+        # AI теги
+        self.ai_tag_patterns = self.load_ai_patterns()
         
         # Скроллбары
         v_scrollbar = ttk.Scrollbar(results_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -326,6 +445,8 @@ class FileScannerGUI:
             data.sort(key=lambda x: x[1][3].lower(), reverse=self.sort_reverse)
         elif column == 'modified':
             data.sort(key=lambda x: x[1][4], reverse=self.sort_reverse)
+        elif column == 'tags':
+            data.sort(key=lambda x: x[1][5], reverse=self.sort_reverse)
         
         # Переупорядочиваем элементы
         for index, (child, values) in enumerate(data):
@@ -341,7 +462,8 @@ class FileScannerGUI:
             'path': 'Путь', 
             'size': 'Размер (MB)',
             'extension': 'Расширение',
-            'modified': 'Изменен'
+            'modified': 'Изменен',
+            'tags': '🤖 AI Теги'
         }
         
         for col in headers:
@@ -373,7 +495,7 @@ class FileScannerGUI:
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (150 // 2)
         search_window.geometry(f"400x150+{x}+{y}")
         
-        ttk.Label(search_window, text="Поиск в именах файлов:", font=('Arial', 12)).pack(pady=10)
+        ttk.Label(search_window, text="Поиск в именах файлов и тегах:", font=('Arial', 12)).pack(pady=10)
         
         search_var = tk.StringVar()
         search_entry = ttk.Entry(search_window, textvariable=search_var, width=40)
@@ -392,13 +514,16 @@ class FileScannerGUI:
             # Фильтруем и показываем только найденные файлы
             found_count = 0
             for file_info in self.files_data:
-                if query in file_info['name'].lower():
+                if (query in file_info['name'].lower() or 
+                    query in ' '.join(file_info.get('ai_tags', [])).lower()):
+                    tags_str = ', '.join(file_info.get('ai_tags', []))
                     self.tree.insert('', 'end', values=(
                         file_info['name'],
                         file_info['full_path'],
                         file_info['size_mb'],
                         file_info['extension'],
-                        file_info['modified_date']
+                        file_info['modified_date'],
+                        tags_str
                     ))
                     found_count += 1
             
@@ -475,12 +600,14 @@ class FileScannerGUI:
             for file_info in self.files_data:
                 if file_info['size_mb'] >= min_size:
                     if not ext_filter or file_info['extension'].lower() == ext_filter:
+                        tags_str = ', '.join(file_info.get('ai_tags', []))
                         self.tree.insert('', 'end', values=(
                             file_info['name'],
                             file_info['full_path'],
                             file_info['size_mb'],
                             file_info['extension'],
-                            file_info['modified_date']
+                            file_info['modified_date'],
+                            tags_str
                         ))
                         found_count += 1
             
@@ -621,7 +748,7 @@ class FileScannerGUI:
         item = self.tree.selection()[0] if self.tree.selection() else None
         if item:
             values = self.tree.item(item)['values']
-            name, path, size, ext, modified = values
+            name, path, size, ext, modified, tags = values
             
             # Найти полную информацию о файле
             file_info = None
@@ -631,6 +758,7 @@ class FileScannerGUI:
                     break
             
             if file_info:
+                tags_str = ', '.join(file_info.get('ai_tags', []))
                 props_text = f"""Свойства файла:
 
 Имя: {file_info['name']}
@@ -639,7 +767,8 @@ class FileScannerGUI:
 Расширение: {file_info['extension']}
 Создан: {file_info['created_date']}
 Изменен: {file_info['modified_date']}
-Папка: {file_info['directory']}"""
+Папка: {file_info['directory']}
+🤖 AI Теги: {tags_str}"""
                 
                 messagebox.showinfo("Свойства файла", props_text)
     
@@ -739,6 +868,10 @@ class FileScannerGUI:
                             'modified_date': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
                             'created_date': datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
                         }
+                        
+                        # Генерируем AI теги
+                        file_info['ai_tags'] = self.generate_ai_tags(file_info)
+                        
                         self.files_data.append(file_info)
                         
                         # Обновляем прогресс
@@ -778,12 +911,14 @@ class FileScannerGUI:
         
         # Добавление новых результатов с цветовой индикацией
         for file_info in self.files_data:
+            tags_str = ', '.join(file_info.get('ai_tags', []))
             item = self.tree.insert('', 'end', values=(
                 file_info['name'],
                 file_info['full_path'],
                 file_info['size_mb'],
                 file_info['extension'],
-                file_info['modified_date']
+                file_info['modified_date'],
+                tags_str
             ))
             
             # Цветовая индикация по размеру
@@ -851,17 +986,22 @@ class FileScannerGUI:
             f.write("-" * 30 + "\n")
             for file_info in sorted(self.files_data, key=lambda x: x['size_mb'], reverse=True):
                 size_indicator = "🔴" if file_info['size_mb'] > 100 else "🟡" if file_info['size_mb'] > 10 else "🟢"
-                f.write(f"{size_indicator} {file_info['full_path']} ({file_info['size_mb']} MB)\n")
+                tags_str = ', '.join(file_info.get('ai_tags', []))
+                f.write(f"{size_indicator} {file_info['full_path']} ({file_info['size_mb']} MB) [Теги: {tags_str}]\n")
     
     def save_to_csv(self, filename):
         """Сохранение в CSV файл"""
         with open(filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=[
                 'name', 'full_path', 'relative_path', 'directory', 
-                'extension', 'size_bytes', 'size_mb', 'modified_date', 'created_date'
+                'extension', 'size_bytes', 'size_mb', 'modified_date', 'created_date', 'ai_tags'
             ])
             writer.writeheader()
-            writer.writerows(self.files_data)
+            for file_info in self.files_data:
+                # Преобразуем теги в строку для CSV
+                file_info_copy = file_info.copy()
+                file_info_copy['ai_tags'] = ', '.join(file_info.get('ai_tags', []))
+                writer.writerow(file_info_copy)
     
     def save_to_json(self, filename):
         """Сохранение в JSON файл"""
@@ -875,14 +1015,15 @@ class FileScannerGUI:
         
         data = {
             'scan_info': {
-                'version': '2.1',
+                'version': '1.0',
                 'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'scanned_folder': self.folder_var.get(),
                 'total_files': len(self.files_data),
                 'total_size_mb': round(total_size_mb, 2),
                 'total_size_gb': round(total_size_mb / 1024, 2),
                 'extensions_stats': extensions,
-                'largest_files': sorted(self.files_data, key=lambda x: x['size_mb'], reverse=True)[:10]
+                'largest_files': sorted(self.files_data, key=lambda x: x['size_mb'], reverse=True)[:10],
+                'ai_enabled': self.ai_enabled.get()
             },
             'files': self.files_data
         }
@@ -909,29 +1050,35 @@ class FileScannerGUI:
     def show_help(self):
         """Показать справку"""
         help_text = """
-🗂️ СКАНЕР ФАЙЛОВ v2.1 - СПРАВКА
+🗂️ ФАЙЛ-СКАНЕР v1.0 - СПРАВКА
 
-✨ НОВЫЕ ВОЗМОЖНОСТИ:
-• Сортировка колонок (клик по заголовку)
-• Цветовая индикация размеров файлов
-• Темная/светлая тема (🌙 или Ctrl+Q)
-• Прогресс сканирования в процентах
-• Прямое сохранение без диалогов
+✨ НОВЫЕ AI ВОЗМОЖНОСТИ:
+• 🤖 Автоматическая генерация тегов
+• Умная категоризация файлов
+• Поиск по тегам и содержимому
+• Анализ по размеру и возрасту файлов
 
 🎯 ОСНОВНЫЕ ВОЗМОЖНОСТИ:
 • Сканирование папок и всех подпапок
 • Детальная информация о файлах
 • Фильтрация по расширениям и размеру
-• Поиск по именам файлов
+• Поиск по именам файлов и AI тегам
 • Статистика по типам файлов
-• Экспорт в TXT и JSON
+• Экспорт в TXT и JSON с тегами
 
 🔧 КАК ИСПОЛЬЗОВАТЬ:
 1. Выберите папку для сканирования  
-2. Настройте опции (по желанию)
+2. Включите "🤖 AI теги" для умного анализа
 3. Нажмите "Сканировать" (F5)
-4. Используйте поиск (F3) и фильтры (Ctrl+F)
-5. Сохраните отчет (Ctrl+S или Ctrl+T)
+4. Поиск работает и по именам, и по тегам
+5. Сохраните отчет с AI данными
+
+🤖 AI ТЕГИ:
+• Автоматически определяют тип файла
+• Категории: работа, код, медиа, игры, архивы
+• Размер: большой/средний/маленький  
+• Возраст: новый/недавний/старый
+• Поиск: "работа" найдет все рабочие файлы
 
 🎨 ЦВЕТОВЫЕ ИНДИКАТОРЫ:
 🔴 Большие файлы (>100 MB)
@@ -940,7 +1087,7 @@ class FileScannerGUI:
 
 ⌨️ ГОРЯЧИЕ КЛАВИШИ:
 F5 - Сканировать
-F3 - Поиск файлов
+F3 - Поиск (по именам и тегам)
 F1 - Справка
 Ctrl+S - Сохранить JSON
 Ctrl+T - Сохранить TXT
@@ -948,25 +1095,16 @@ Ctrl+Q - Переключить тему
 Ctrl+F - Фильтрация
 Del - Очистить результаты
 
-👆 КОНТЕКСТНОЕ МЕНЮ:
-ПКМ по файлу → Копировать путь, Открыть папку, Свойства
-
-📁 ФИЛЬТРЫ:
-• Расширения: .txt .py .jpg .doc
-• Размер: файлы больше X MB
-• Поиск: по имени файла
-
 💾 СОХРАНЕНИЕ:
-• JSON (Ctrl+S): быстрое сохранение в JSON
-• TXT (Ctrl+T): быстрое сохранение в TXT  
-• Все файлы сохраняются рядом со скриптом
-• Формат имени: "Название папки - Анализ - дата-время.расширение"
+• JSON и TXT содержат AI теги
+• Готово для экспорта в Supabase
+• Формат: "Папка - Анализ - дата.расширение"
 
 🎨 ТЕМЫ:
 • Светлая тема (по умолчанию)
 • Темная тема (кнопка 🌙 или Ctrl+Q)
 
-АВТОР: File Scanner v1.0 Final
+АВТОР: File Scanner v1.0 with AI
 """
         
         messagebox.showinfo("Справка", help_text)
